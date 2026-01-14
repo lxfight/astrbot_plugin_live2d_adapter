@@ -1,0 +1,167 @@
+"""输入消息转换器 - 将 Live2D 客户端的消息转换为 AstrBot 消息对象"""
+
+import base64
+import os
+import re
+import tempfile
+from pathlib import Path
+from typing import Any
+
+try:
+    from astrbot.api.message_components import File, Image, Plain, Record
+except ImportError:
+    Plain = Image = Record = File = None
+
+
+class InputMessageConverter:
+    """输入消息转换器 - 将 Live2D 客户端的消息转换为 AstrBot 消息对象"""
+
+    def __init__(self, temp_dir: str | None = None):
+        """
+        初始化转换器
+
+        Args:
+            temp_dir: 临时文件目录，用于存储 Base64 图片
+        """
+        self.temp_dir = temp_dir or tempfile.gettempdir()
+        Path(self.temp_dir).mkdir(parents=True, exist_ok=True)
+
+    def convert(self, content: list[dict[str, Any]]) -> tuple[list, str]:
+        """
+        转换输入消息
+
+        Args:
+            content: input.message 的 content 数组
+
+        Returns:
+            (消息组件列表, 纯文本字符串)
+        """
+        message_components = []
+        text_parts = []
+
+        for item in content:
+            item_type = item.get("type")
+
+            if item_type == "text":
+                text = item.get("text", "")
+                if Plain:
+                    message_components.append(Plain(text))
+                text_parts.append(text)
+
+            elif item_type == "image":
+                image_comp = self._convert_image(item)
+                if image_comp:
+                    message_components.append(image_comp)
+                    text_parts.append("[图片]")
+
+            elif item_type == "voice":
+                voice_comp, voice_text = self._convert_voice(item)
+                if voice_comp:
+                    message_components.append(voice_comp)
+                if voice_text:
+                    text_parts.append(voice_text)
+
+        message_str = "".join(text_parts)
+        return message_components, message_str
+
+    def _convert_image(self, item: dict[str, Any]) -> Any | None:
+        """转换图片消息"""
+        if not Image:
+            return None
+
+        url = item.get("url")
+        data = item.get("data")
+
+        if data and data.startswith("data:image/"):
+            # Base64 图片
+            try:
+                # 解析 data URI
+                match = re.match(r"data:image/(\w+);base64,(.+)", data)
+                if match:
+                    image_format, base64_data = match.groups()
+                    image_bytes = base64.b64decode(base64_data)
+
+                    # 保存到临时文件
+                    temp_file = os.path.join(
+                        self.temp_dir,
+                        f"live2d_img_{os.urandom(8).hex()}.{image_format}",
+                    )
+                    with open(temp_file, "wb") as f:
+                        f.write(image_bytes)
+
+                    return Image.fromFileSystem(temp_file)
+            except Exception as e:
+                print(f"[错误] 解析 Base64 图片失败: {e}")
+                return None
+
+        elif url:
+            # URL 图片
+            if url.startswith("http://") or url.startswith("https://"):
+                return Image.fromURL(url)
+            elif url.startswith("file:///"):
+                local_path = url[8:] if os.name == "nt" else url[7:]
+                return Image.fromFileSystem(local_path)
+
+        return None
+
+    def _convert_voice(self, item: dict[str, Any]) -> tuple[Any | None, str | None]:
+        """转换语音消息，返回 (组件, 文本)"""
+        stt_mode = item.get("sttMode", "remote")
+
+        if stt_mode == "local":
+            # 本地 STT，直接使用文本
+            text = item.get("text", "")
+            if Plain:
+                return Plain(text), text
+            return None, text
+
+        else:
+            # 远程 STT，返回音频文件路径（由 AstrBot STT 插件处理）
+            url = item.get("url")
+            data = item.get("data")
+
+            # 优先处理 Base64 音频数据
+            if data and Record:
+                try:
+                    # 解析 data URI (格式: data:audio/webm;base64,... 或 data:audio/webm;codecs=opus;base64,...)
+                    match = re.match(r"data:audio/([^;,]+)(?:[^,]*)?;base64,(.+)", data)
+                    if match:
+                        # 提取主要格式（去除 codecs 等参数）
+                        audio_format_raw = match.group(1)
+                        base64_data = match.group(2)
+
+                        # 映射格式到文件扩展名
+                        format_map = {
+                            "webm": "webm",
+                            "ogg": "ogg",
+                            "opus": "opus",
+                            "mp4": "m4a",
+                            "mpeg": "mp3",
+                            "wav": "wav",
+                        }
+                        audio_ext = format_map.get(audio_format_raw.lower(), audio_format_raw.lower())
+
+                        audio_bytes = base64.b64decode(base64_data)
+
+                        # 保存到临时文件
+                        temp_file = os.path.join(
+                            self.temp_dir,
+                            f"live2d_voice_{os.urandom(8).hex()}.{audio_ext}",
+                        )
+                        with open(temp_file, "wb") as f:
+                            f.write(audio_bytes)
+
+                        print(f"[信息] 已保存语音文件: {temp_file}, 格式: {audio_format_raw}")
+                        return Record.fromFileSystem(temp_file), "[语音]"
+                except Exception as e:
+                    print(f"[错误] 解析 Base64 音频失败: {e}")
+
+            # 降级处理 URL
+            if url and Record:
+                if url.startswith("file:///"):
+                    local_path = url[8:] if os.name == "nt" else url[7:]
+                    return Record.fromFileSystem(local_path), "[语音]"
+                elif url.startswith("http://") or url.startswith("https://"):
+                    return Record.fromURL(url), "[语音]"
+
+            return None, None

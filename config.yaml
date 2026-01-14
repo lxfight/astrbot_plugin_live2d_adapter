@@ -1,0 +1,18 @@
+server:
+  host: "0.0.0.0"
+  port: 9090
+  auth_token: "secret"
+  path: "/ws"
+  max_connections: 1
+  kick_old: true
+
+http:
+  enabled: false  # 适配器作为服务端组件，默认不启用 HTTP 服务
+  host: "0.0.0.0"
+  port: 8080
+  static_dir: "../astrbot-live2d-desktop/dist"
+
+events:
+  report_group_msg: true
+  report_private_msg: true
+  enable_perform: true
