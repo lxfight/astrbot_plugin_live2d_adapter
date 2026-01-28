@@ -117,17 +117,32 @@ class Live2DAdapterPlugin(Star):
             Live2DPlatformAdapter 实例，如果未找到则返回 None
         """
         try:
-            # 从 AstrBot 的平台管理器中获取适配器实例
-            # 注意：这里需要根据实际 AstrBot 架构调整
-            platforms = getattr(self.context, "platforms", None)
-            if platforms:
-                for platform in platforms:
-                    if isinstance(platform, Live2DPlatformAdapter):
-                        return platform
+            platform_manager = getattr(self.context, "platform_manager", None)
+            if not platform_manager or not getattr(platform_manager, "get_insts", None):
+                logger.warning("[Live2D] context.platform_manager 不可用，无法获取适配器实例")
+                return None
 
-            # 备用方案：通过全局变量或单例模式
-            logger.warning("[Live2D] 无法从 context 获取适配器实例")
-            return None
+            platforms = platform_manager.get_insts()
+            live2d_insts: list[Live2DPlatformAdapter] = [
+                p for p in platforms if isinstance(p, Live2DPlatformAdapter)
+            ]
+            if not live2d_insts:
+                logger.warning("[Live2D] 未找到 Live2D 平台适配器实例（可能未启用平台配置）")
+                return None
+
+            if len(live2d_insts) > 1:
+                ids = []
+                for inst in live2d_insts:
+                    try:
+                        ids.append(inst.meta().id)
+                    except Exception:
+                        ids.append(str(getattr(inst, "config", {}).get("id", "unknown")))
+                logger.info(
+                    "[Live2D] 检测到多个 Live2D 平台适配器实例，将使用第一个。实例ID: %s",
+                    ", ".join(ids),
+                )
+
+            return live2d_insts[0]
 
         except Exception as e:
             logger.error(f"[Live2D] 获取适配器实例失败: {e}", exc_info=True)

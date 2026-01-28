@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
         "ws_host": "0.0.0.0",
         "ws_port": 9090,
         "ws_path": "/astrbot/live2d",
-        "auth_token": "your_secret_token",
+        "auth_token": "",
         "max_connections": 1,
         "kick_old": True,
         "enable_auto_emotion": True,

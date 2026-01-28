@@ -37,11 +37,11 @@
 
 ### 方式 1：作为 AstrBot 插件（推荐）
 
-1. 将本项目克隆到 AstrBot 插件目录：
+1. 将本项目放入 AstrBot 插件目录（示例路径按你的安装位置调整）：
 
 ```bash
 cd <AstrBot安装目录>/addons/plugins
-git clone https://github.com/your-org/astrbot-live2d-adapter.git
+# 将本仓库复制/克隆到该目录下
 ```
 
 2. 安装依赖：
@@ -109,34 +109,24 @@ tts_mode: "local"          # TTS 模式：local（桌面端处理）/ remote（�
 ```
 astrbot-live2d-adapter/
 ├── main.py                  # AstrBot 插件入口
-├── live2d_platform.py       # 平台适配器主类
-├── live2d_event.py          # 消息事件类
-├── message_converter.py     # 消息转换器（双向）
-├── server.py                # WebSocket 服务器
-├── handler.py               # 消息处理器
-├── protocol.py              # 协议定义和数据结构
-├── commands.py              # 指令处理器
-├── config.py                # 配置管理
 ├── config.yaml              # 默认配置
 ├── requirements.txt         # Python 依赖
-├── PROGRESS.md              # 开发进度追踪
-└── README.md                # 本文件
+├── adapters/                # 平台适配器与事件定义
+├── commands/                # /live2d 指令
+├── converters/              # 消息/表演序列转换
+├── core/                    # 协议与核心类型
+└── server/                  # WebSocket 服务端实现
 ```
 
 ### 协议
 
-使用 **L2D-Bridge Protocol v1.0**，详见：
-- [Live2D-Bridge-Protocol.md](../docs/Live2D-Bridge-Protocol.md) - 协议设计文档
-- [adapter-spec.md](../docs/adapter-spec.md) - 适配器规范
+使用 **L2D-Bridge Protocol v1.0**。
 
-### 参考文档
-
-- [AstrBot 适配器开发文档](../docs/AstrBot%20适配器开发文档) - 平台适配器开发指南
-- [PROGRESS.md](PROGRESS.md) - 详细的开发进度和功能矩阵
+说明：协议文档通常与桌面端项目一起维护；如果你将本适配器独立发布，请将协议文档一并带上并在此处补充链接。
 
 ## 许可证
 
-（待添加）
+（待添加；公开仓库前建议补齐 LICENSE 文件）
 
 ## 相关项目
 

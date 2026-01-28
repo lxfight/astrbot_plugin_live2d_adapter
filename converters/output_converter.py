@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from astrbot.api.event import MessageChain as MessageChainType
@@ -47,6 +47,10 @@ except ImportError:
         WechatEmoji,
     ) = (None,) * 15
 
+from ..core.motion_types import (
+    enhance_perform_sequence_with_motion_type,
+    infer_motion_type_from_message,
+)
 from ..core.protocol import (
     create_expression_element,
     create_image_element,
@@ -54,7 +58,6 @@ from ..core.protocol import (
     create_text_element,
     create_tts_element,
 )
-from .emotion_analyzer import EmotionAnalyzer
 
 
 class OutputMessageConverter:
@@ -153,29 +156,35 @@ class OutputMessageConverter:
                         )
                     )
 
-        # 自动添加情感动作和表情（只添加一次）
+        # 使用新的动作类型匹配系统
         if self.enable_auto_emotion and full_text and not has_added_emotion:
-            expression, motion = EmotionAnalyzer.analyze(full_text)
+            # 方案2：仅下发动作类型，不下发具体动作/表情ID。
+            # 桌面端根据 motionType 从本地分配集合中随机选择；若该类型为空则回退到待机集合。
+            motion_type = infer_motion_type_from_message(full_text)
 
-            if expression:
-                sequence.append(
-                    create_expression_element(expression_id=expression, fade=300)
-                )
+            # 发送一个“类型化表情”占位（不携带具体 expressionId）
+            expression_element = create_expression_element(expression_id="", fade=300)
+            expression_element["motionType"] = motion_type
+            sequence.append(expression_element)
 
-            if motion:
-                sequence.append(
-                    create_motion_element(
-                        group=motion.get("group", "Idle"),
-                        index=motion.get("index", 0),
-                        priority=2,
-                    )
-                )
+            # 发送一个“类型化动作”占位（group/index 不作为真实指令使用）
+            motion_element = create_motion_element(group="Idle", index=0, priority=2)
+            motion_element["motionType"] = motion_type
+            sequence.append(motion_element)
 
             has_added_emotion = True
 
         # 如果没有添加情感，添加默认动作
         if not has_added_emotion and full_text:
-            sequence.append(create_motion_element(group="Idle", index=0, priority=2))
+            motion_type = infer_motion_type_from_message(full_text)
+            motion_element = create_motion_element(group="Idle", index=0, priority=2)
+            motion_element["motionType"] = motion_type
+            sequence.append(motion_element)
+
+        # 为整个序列添加动作类型信息
+        if full_text:
+            motion_type = infer_motion_type_from_message(full_text)
+            sequence = enhance_perform_sequence_with_motion_type(sequence, motion_type)
 
         return sequence
 
