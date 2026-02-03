@@ -96,6 +96,7 @@ class Protocol:
     OP_STATE_READY = "state.ready"
     OP_STATE_PLAYING = "state.playing"
     OP_STATE_CONFIG = "state.config"
+    OP_STATE_MODEL = "state.model"
     OP_RESOURCE_PREPARE = "resource.prepare"
     OP_RESOURCE_COMMIT = "resource.commit"
     OP_RESOURCE_GET = "resource.get"

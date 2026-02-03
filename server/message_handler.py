@@ -86,6 +86,9 @@ class MessageHandler:
         elif packet.op == ProtocolClass.OP_STATE_CONFIG:
             return await self.handle_state_config(packet, client_id)
 
+        elif packet.op == ProtocolClass.OP_STATE_MODEL:
+            return await self.handle_state_model(packet, client_id)
+
         else:
             logger.warning(f"未知的操作码: {packet.op}")
             return None
@@ -137,6 +140,7 @@ class MessageHandler:
             "state.ready",
             "state.playing",
             "state.config",
+            "state.model",
         ]
         if self.resource_manager:
             server_capabilities.extend(
@@ -385,4 +389,43 @@ class MessageHandler:
         payload = packet.payload or {}
         self.client_states.setdefault(client_id, {})["config"] = payload
         logger.info(f"客户端 {client_id} 配置更新: {payload}")
+        return None
+
+    async def handle_state_model(
+        self, packet: BasePacket, client_id: str
+    ) -> BasePacket | None:
+        """处理模型信息更新"""
+        payload = packet.payload or {}
+        self.client_states.setdefault(client_id, {})["model"] = payload
+
+        model_name = payload.get("name", "unknown")
+        motion_groups = payload.get("motionGroups", {})
+        expressions = payload.get("expressions", [])
+
+        # 计算总动作数和动作详情
+        total_motions = 0
+        motion_details = []
+        if isinstance(motion_groups, dict):
+            for group_name, motions in motion_groups.items():
+                if isinstance(motions, list):
+                    total_motions += len(motions)
+                    motion_details.append(f"{group_name}({len(motions)})")
+
+        logger.info(
+            f"客户端 {client_id} 模型信息更新: "
+            f"name={model_name}, "
+            f"motion_groups={len(motion_groups)}, "
+            f"total_motions={total_motions}, "
+            f"expressions={len(expressions)}"
+        )
+        logger.debug(f"动作组详情: {', '.join(motion_details)}")
+
+        # 打印每个动作组的详细动作列表
+        for group_name, motions in motion_groups.items():
+            if isinstance(motions, list):
+                motion_files = [m.get('file', f"motion_{m.get('index', '?')}") for m in motions]
+                logger.debug(f"  {group_name}: {motion_files}")
+
+        logger.debug(f"表情列表: {expressions}")
+
         return None

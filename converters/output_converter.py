@@ -66,6 +66,7 @@ class OutputMessageConverter:
         tts_mode: str = "remote",
         resource_manager: Any | None = None,
         resource_config: dict[str, Any] | None = None,
+        client_model_info: dict[str, Any] | None = None,
     ):
         """初始化转换器
 
@@ -74,11 +75,13 @@ class OutputMessageConverter:
             tts_mode: TTS 模式 (remote/local)
             resource_manager: 资源管理器（处理本地文件转资源）
             resource_config: 资源配置（inline 限制等）
+            client_model_info: 客户端模型信息（动作组和表情列表）
         """
         self.enable_tts = enable_tts
         self.tts_mode = tts_mode
         self.resource_manager = resource_manager
         self.resource_config = resource_config or {}
+        self.client_model_info = client_model_info or {}
 
     def convert(
         self, message_chain: MessageChainType, tts_url: str | None = None
@@ -193,9 +196,18 @@ class OutputMessageConverter:
         if not group:
             return None
 
+        # 验证动作组是否存在
+        if not self._validate_motion_group(group):
+            return None
+
+        # 获取动作索引并验证
+        index = getattr(component, "index", 0)
+        if not self._validate_motion_index(group, index):
+            return None
+
         motion_elem = create_motion_element(
             group=group,
-            index=getattr(component, "index", 0),
+            index=index,
             priority=getattr(component, "priority", 2),
             loop=getattr(component, "loop", False),
             fade_in=getattr(component, "fade_in", 300),
@@ -209,6 +221,63 @@ class OutputMessageConverter:
 
         return motion_elem
 
+    def _validate_motion_group(self, group: str) -> bool:
+        """验证动作组是否存在于客户端模型中"""
+        if not self.client_model_info:
+            return True  # 没有模型信息时不验证
+
+        motion_groups = self.client_model_info.get("motionGroups", {})
+        if not motion_groups:
+            return True  # 模型信息中没有动作组列表时不验证
+
+        # motionGroups 现在是 dict，键是动作组名，值是动作列表
+        if group not in motion_groups:
+            # 尝试不区分大小写匹配
+            group_lower = group.lower()
+            for available_group in motion_groups.keys():
+                if available_group.lower() == group_lower:
+                    return True
+            return False
+
+        return True
+
+    def _validate_motion_index(self, group: str, index: int) -> bool:
+        """验证动作索引是否在有效范围内"""
+        if not self.client_model_info:
+            return True  # 没有模型信息时不验证
+
+        motion_groups = self.client_model_info.get("motionGroups", {})
+        if not motion_groups:
+            return True
+
+        # 获取动作组的动作列表
+        motions = motion_groups.get(group)
+        if not motions or not isinstance(motions, list):
+            return True  # 找不到动作组时不验证
+
+        # 检查索引是否在范围内
+        return 0 <= index < len(motions)
+
+    def _validate_expression(self, expression_id: str | int) -> bool:
+        """验证表情是否存在于客户端模型中"""
+        if not self.client_model_info:
+            return True  # 没有模型信息时不验证
+
+        expressions = self.client_model_info.get("expressions", [])
+        if not expressions:
+            return True  # 模型信息中没有表情列表时不验证
+
+        expression_str = str(expression_id)
+        if expression_str not in expressions:
+            # 尝试不区分大小写匹配
+            expression_lower = expression_str.lower()
+            for available_expr in expressions:
+                if str(available_expr).lower() == expression_lower:
+                    return True
+            return False
+
+        return True
+
     def _build_expression_from_component(self, component: Any) -> dict[str, Any] | None:
         """从自定义 Live2DExpression 组件构建表情元素
 
@@ -219,6 +288,10 @@ class OutputMessageConverter:
         """
         expression_id = getattr(component, "expression_id", None) or getattr(component, "id", None)
         if expression_id is None:
+            return None
+
+        # 验证表情是否存在
+        if not self._validate_expression(expression_id):
             return None
 
         expression_elem = create_expression_element(

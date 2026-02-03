@@ -511,6 +511,15 @@ class Live2DPlatformAdapter(Platform):
                 await super().send_by_session(session, message_chain)
                 return
 
+            # 获取客户端模型信息
+            client_model_info = None
+            if hasattr(self.ws_server, 'message_handler') and self.ws_server.message_handler:
+                client_state = self.ws_server.message_handler.client_states.get(target_client_id, {})
+                client_model_info = client_state.get("model")
+
+            # 更新转换器的模型信息
+            self.output_converter.client_model_info = client_model_info or {}
+
             # 转换 MessageChain 为表演序列
             sequence = self.output_converter.convert(message_chain)
 
