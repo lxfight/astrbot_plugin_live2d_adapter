@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from astrbot.api import logger
     from astrbot.api.message_components import File, Image, Plain, Record, Video
 except ImportError:
+    logger = None
     Plain = Image = Record = File = Video = None
 
 
@@ -256,7 +258,7 @@ class InputMessageConverter:
                             reserve_files=1,
                         )
                     except Exception as e:
-                        print(f"[错误] 清理临时文件失败: {e}")
+                        logger.error("清理临时文件失败: {e}")
                         return None
 
                     # 保存到临时文件
@@ -270,7 +272,7 @@ class InputMessageConverter:
                     img = Image.fromFileSystem(temp_file)
                     return self._set_component_url(img, os.path.abspath(temp_file))
             except Exception as e:
-                print(f"[错误] 解析 Base64 图片失败: {e}")
+                logger.error("解析 Base64 图片失败: {e}")
                 return None
 
         elif url:
@@ -348,7 +350,7 @@ class InputMessageConverter:
                             reserve_files=1,
                         )
                     except Exception as e:
-                        print(f"[错误] 清理临时文件失败: {e}")
+                        logger.error("清理临时文件失败: {e}")
                         return None, None
 
                     # 保存到临时文件
@@ -359,14 +361,15 @@ class InputMessageConverter:
                     with open(temp_file, "wb") as f:
                         f.write(audio_bytes)
 
-                    print(
-                        f"[信息] 已保存语音文件: {temp_file}, 格式: {audio_format_raw}"
-                    )
+                    if logger:
+                        logger.debug(
+                            f"已保存语音文件: {temp_file}, 格式: {audio_format_raw}"
+                        )
                     rec = Record.fromFileSystem(temp_file)
                     rec = self._set_component_url(rec, os.path.abspath(temp_file))
                     return rec, "[语音]"
             except Exception as e:
-                print(f"[错误] 解析 Base64 音频失败: {e}")
+                logger.error("解析 Base64 音频失败: {e}")
 
         # 降级处理 URL
         if url and Record:
@@ -421,7 +424,7 @@ class InputMessageConverter:
                         reserve_files=1,
                     )
                 except Exception as e:
-                    print(f"[错误] 清理临时文件失败: {e}")
+                    logger.error("清理临时文件失败: {e}")
                     return None, None
 
                 suffix = ""
@@ -444,7 +447,7 @@ class InputMessageConverter:
                     f"[文件] {name}",
                 )
             except Exception as e:
-                print(f"[错误] 解析 Base64 文件失败: {e}")
+                logger.error("解析 Base64 文件失败: {e}")
                 return None, None
 
         if url:
@@ -506,7 +509,7 @@ class InputMessageConverter:
                             reserve_files=1,
                         )
                     except Exception as e:
-                        print(f"[错误] 清理临时文件失败: {e}")
+                        logger.error("清理临时文件失败: {e}")
                         return None, None
                     temp_file = os.path.join(
                         self.temp_dir,
@@ -516,7 +519,7 @@ class InputMessageConverter:
                         f.write(video_bytes)
                     return Video.fromFileSystem(temp_file), "[视频]"
             except Exception as e:
-                print(f"[错误] 解析 Base64 视频失败: {e}")
+                logger.error("解析 Base64 视频失败: {e}")
                 return None, None
 
         if url:
