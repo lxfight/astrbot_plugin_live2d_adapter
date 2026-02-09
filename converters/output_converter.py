@@ -286,7 +286,9 @@ class OutputMessageConverter:
             - fade: int - 淡入淡出时间ms（默认 300）
             - motion_type: str - 动作类型（可选）
         """
-        expression_id = getattr(component, "expression_id", None) or getattr(component, "id", None)
+        expression_id = getattr(component, "expression_id", None) or getattr(
+            component, "id", None
+        )
         if expression_id is None:
             return None
 

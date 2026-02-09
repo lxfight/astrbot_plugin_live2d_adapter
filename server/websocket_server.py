@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import websockets
+
 from astrbot.api import logger
 
 from ..core.config import ConfigLike

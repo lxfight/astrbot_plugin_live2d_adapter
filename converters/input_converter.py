@@ -59,8 +59,8 @@ class InputMessageConverter:
             包含临时文件数量和总字节数的字典
         """
         return {
-            'count': len(self._temp_files),
-            'total_bytes': sum(self._temp_files.values())
+            "count": len(self._temp_files),
+            "total_bytes": sum(self._temp_files.values()),
         }
 
     def convert(self, content: list[dict[str, Any]]) -> tuple[list, str]:

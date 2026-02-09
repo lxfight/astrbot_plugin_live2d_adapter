@@ -277,6 +277,10 @@ class Live2DPlatformAdapter(Platform):
                 return self._data.get("temp_max_files", 5000)
 
             @property
+            def enable_streaming(self) -> bool:
+                return self._data.get("enable_streaming", True)
+
+            @property
             def cleanup_interval_seconds(self) -> int:
                 return self._data.get("cleanup_interval_seconds", 600)
 
@@ -462,9 +466,7 @@ class Live2DPlatformAdapter(Platform):
                 config={
                     "enable_tts": self.config.get("enable_tts", False),
                     "tts_mode": self.config.get("tts_mode", "local"),
-                    "enable_streaming": self.config.get(
-                        "enable_streaming", True
-                    ),
+                    "enable_streaming": self.config.get("enable_streaming", True),
                 },
                 resource_manager=self.resource_manager,
             )
@@ -513,8 +515,13 @@ class Live2DPlatformAdapter(Platform):
 
             # 获取客户端模型信息
             client_model_info = None
-            if hasattr(self.ws_server, 'message_handler') and self.ws_server.message_handler:
-                client_state = self.ws_server.message_handler.client_states.get(target_client_id, {})
+            if (
+                hasattr(self.ws_server, "handler")
+                and self.ws_server.handler
+            ):
+                client_state = self.ws_server.handler.client_states.get(
+                    target_client_id, {}
+                )
                 client_model_info = client_state.get("model")
 
             # 更新转换器的模型信息
@@ -529,7 +536,9 @@ class Live2DPlatformAdapter(Platform):
                 return
 
             # 创建 perform.show 数据包
-            packet = ProtocolClass.create_perform_show(sequence=sequence, interrupt=True)
+            packet = ProtocolClass.create_perform_show(
+                sequence=sequence, interrupt=True
+            )
 
             await self.ws_server.send_to(target_client_id, packet)
 

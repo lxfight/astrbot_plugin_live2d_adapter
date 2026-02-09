@@ -151,7 +151,7 @@ class Live2DAdapter(Star):
         """获取 Live2D 平台适配器实例"""
         try:
             platform_manager = self.context.platform_manager
-            for platform in platform_manager.platforms:
+            for platform in platform_manager.platform_insts:
                 if isinstance(platform, Live2DPlatformAdapter):
                     return platform
             return None
@@ -161,11 +161,12 @@ class Live2DAdapter(Star):
 
     def _format_bytes(self, bytes_size: int) -> str:
         """格式化字节大小"""
+        size = float(bytes_size)
         for unit in ["B", "KB", "MB", "GB"]:
-            if bytes_size < 1024.0:
-                return f"{bytes_size:.1f}{unit}"
-            bytes_size /= 1024.0
-        return f"{bytes_size:.1f}TB"
+            if size < 1024.0:
+                return f"{size:.1f}{unit}"
+            size /= 1024.0
+        return f"{size:.1f}TB"
 
     def _format_duration(self, seconds: int) -> str:
         """格式化时长"""
@@ -246,25 +247,31 @@ class Live2DAdapter(Star):
             if adapter.resource_manager:
                 rm = adapter.resource_manager
                 resource_files = len(rm.resources)
-                max_files = rm.max_total_files
+                max_files = rm.max_total_files or 1
                 total_bytes = sum(r.size for r in rm.resources.values())
-                max_bytes = rm.max_total_bytes
+                max_bytes = rm.max_total_bytes or 1
                 usage_percent = (total_bytes / max_bytes * 100) if max_bytes > 0 else 0
 
                 resource_info = f"""
 资源使用:
-  - 资源文件: {resource_files}/{max_files} ({resource_files/max_files*100:.1f}%)
+  - 资源文件: {resource_files}/{max_files} ({resource_files / max_files * 100:.1f}%)
   - 存储空间: {self._format_bytes(total_bytes)}/{self._format_bytes(max_bytes)} ({usage_percent:.1f}%)"""
 
             # 临时文件信息
             temp_info = ""
-            if adapter.input_converter:
+            if adapter.input_converter and hasattr(
+                adapter.input_converter, "get_temp_files_info"
+            ):
                 temp_info_data = adapter.input_converter.get_temp_files_info()
-                temp_files = temp_info_data['count']
-                temp_bytes = temp_info_data['total_bytes']
-                max_temp_files = adapter.input_converter.temp_max_files
-                max_temp_bytes = adapter.input_converter.temp_max_total_bytes
-                temp_usage = (temp_bytes / max_temp_bytes * 100) if max_temp_bytes > 0 else 0
+                temp_files = temp_info_data["count"]
+                temp_bytes = temp_info_data["total_bytes"]
+                max_temp_files = getattr(adapter.input_converter, "temp_max_files", 1)
+                max_temp_bytes = getattr(
+                    adapter.input_converter, "temp_max_total_bytes", 1
+                )
+                temp_usage = (
+                    (temp_bytes / max_temp_bytes * 100) if max_temp_bytes > 0 else 0
+                )
 
                 temp_info = f"""
   - 临时文件: {temp_files}/{max_temp_files}
@@ -272,7 +279,9 @@ class Live2DAdapter(Star):
 
             # 服务器状态
             ws_status = "运行中" if ws_server and ws_server.server else "未运行"
-            ws_addr = f"{adapter.config_obj.server_host}:{adapter.config_obj.server_port}"
+            ws_addr = (
+                f"{adapter.config_obj.server_host}:{adapter.config_obj.server_port}"
+            )
 
             resource_server_status = "未启用"
             resource_addr = ""
@@ -280,8 +289,16 @@ class Live2DAdapter(Star):
                 resource_server_status = "运行中"
                 resource_addr = f"{adapter.config_obj.resource_host}:{adapter.config_obj.resource_port}"
 
-            streaming_status = "已启用" if adapter.config_obj.enable_streaming else "未启用"
-            tts_status = "已启用" if adapter.config_obj.enable_tts else "未启用"
+            streaming_status = (
+                "已启用"
+                if getattr(adapter.config_obj, "enable_streaming", False)
+                else "未启用"
+            )
+            tts_status = (
+                "已启用"
+                if getattr(adapter.config_obj, "enable_tts", False)
+                else "未启用"
+            )
 
             status_msg = f"""[Live2D Adapter] 适配器状态
 
@@ -292,7 +309,7 @@ class Live2DAdapter(Star):
 
 服务器状态:
   - WebSocket: {ws_status} ({ws_addr})
-  - 资源服务器: {resource_server_status} {f'({resource_addr})' if resource_addr else ''}
+  - 资源服务器: {resource_server_status} {f"({resource_addr})" if resource_addr else ""}
   - 流式消息: {streaming_status}
   - TTS: {tts_status}"""
 
@@ -312,7 +329,10 @@ class Live2DAdapter(Star):
             ws_server = adapter.ws_server
 
             # 获取客户端信息
-            client_info = ws_server.handler.client_states.get(client_id, {})
+            if ws_server and hasattr(ws_server, "handler"):
+                client_info = ws_server.handler.client_states.get(client_id, {})
+            else:
+                client_info = {}
             model_info = client_info.get("model", {})
             session_info = client_info.get("session", {})
 
@@ -332,7 +352,9 @@ class Live2DAdapter(Star):
             motion_info = ""
             if motion_groups:
                 total_motions = sum(len(motions) for motions in motion_groups.values())
-                motion_info = f"\n  - 动作组: {len(motion_groups)} 组，共 {total_motions} 个动作"
+                motion_info = (
+                    f"\n  - 动作组: {len(motion_groups)} 组，共 {total_motions} 个动作"
+                )
 
             # 表情信息
             expression_info = ""
@@ -352,7 +374,9 @@ class Live2DAdapter(Star):
 
         except Exception as e:
             logger.exception(f"获取详细信息失败: {e}")
-            return MessageChain().message(f"[Live2D Adapter] 错误: 获取详细信息失败 - {e}")
+            return MessageChain().message(
+                f"[Live2D Adapter] 错误: 获取详细信息失败 - {e}"
+            )
 
     async def _cmd_list(self, adapter: Live2DPlatformAdapter) -> MessageChain:
         """列出所有连接的客户端"""
@@ -367,7 +391,9 @@ class Live2DAdapter(Star):
                 model_info = client_info.get("model", {})
                 model_name = model_info.get("name", "未知")
 
-                is_current = "[当前]" if client_id == adapter.current_client_id else "      "
+                is_current = (
+                    "[当前]" if client_id == adapter.current_client_id else "      "
+                )
                 client_list.append(f"{is_current} {client_id[:8]}... - {model_name}")
 
             list_msg = f"""[Live2D Adapter] 连接的客户端列表 ({len(client_list)})
@@ -378,7 +404,9 @@ class Live2DAdapter(Star):
 
         except Exception as e:
             logger.exception(f"获取客户端列表失败: {e}")
-            return MessageChain().message(f"[Live2D Adapter] 错误: 获取客户端列表失败 - {e}")
+            return MessageChain().message(
+                f"[Live2D Adapter] 错误: 获取客户端列表失败 - {e}"
+            )
 
     async def _cmd_resources(self, adapter: Live2DPlatformAdapter) -> MessageChain:
         """显示资源信息"""
@@ -400,23 +428,31 @@ class Live2DAdapter(Star):
                 type_stats[kind] = type_stats.get(kind, 0) + 1
                 total_size += resource.size
 
-            stats_lines = [f"  - {kind}: {count} 个" for kind, count in type_stats.items()]
+            stats_lines = [
+                f"  - {kind}: {count} 个" for kind, count in type_stats.items()
+            ]
 
-            resource_msg = f"""[Live2D Adapter] 资源统计
+            resource_msg = (
+                f"""[Live2D Adapter] 资源统计
 
 总计: {len(resources)} 个文件，{self._format_bytes(total_size)}
 
 按类型:
-""" + "\n".join(stats_lines) + f"""
+"""
+                + "\n".join(stats_lines)
+                + f"""
 
-配额: {len(resources)}/{rm.max_total_files} 文件
-      {self._format_bytes(total_size)}/{self._format_bytes(rm.max_total_bytes)} 空间"""
+配额: {len(resources)}/{rm.max_total_files or 0} 文件
+      {self._format_bytes(total_size)}/{self._format_bytes(rm.max_total_bytes or 0)} 空间"""
+            )
 
             return MessageChain().message(resource_msg)
 
         except Exception as e:
             logger.exception(f"获取资源信息失败: {e}")
-            return MessageChain().message(f"[Live2D Adapter] 错误: 获取资源信息失败 - {e}")
+            return MessageChain().message(
+                f"[Live2D Adapter] 错误: 获取资源信息失败 - {e}"
+            )
 
     async def _cmd_cleanup(self, adapter: Live2DPlatformAdapter) -> MessageChain:
         """手动触发清理"""
@@ -427,16 +463,20 @@ class Live2DAdapter(Star):
             # 清理资源
             if adapter.resource_manager:
                 before = len(adapter.resource_manager.resources)
-                adapter.resource_manager.cleanup_expired()
+                # ResourceManager 只有 cleanup 方法
+                if hasattr(adapter.resource_manager, "cleanup"):
+                    adapter.resource_manager.cleanup()  # type: ignore[attr-defined]
                 after = len(adapter.resource_manager.resources)
                 cleaned_resources = before - after
 
             # 清理临时文件
-            if adapter.input_converter:
+            if adapter.input_converter and hasattr(
+                adapter.input_converter, "get_temp_files_info"
+            ):
                 before_info = adapter.input_converter.get_temp_files_info()
                 adapter.input_converter.cleanup_temp_files()
                 after_info = adapter.input_converter.get_temp_files_info()
-                cleaned_temp = before_info['count'] - after_info['count']
+                cleaned_temp = before_info["count"] - after_info["count"]
 
             cleanup_msg = f"""[Live2D Adapter] 清理完成
 
@@ -459,24 +499,24 @@ class Live2DAdapter(Star):
 WebSocket:
   - 地址: {config.server_host}:{config.server_port}
   - 路径: {config.ws_path}
-  - 认证: {'已启用' if config.auth_token else '未启用'}
+  - 认证: {"已启用" if config.auth_token else "未启用"}
   - 最大连接: {config.max_connections}
 
 功能:
-  - 流式消息: {'已启用' if config.enable_streaming else '未启用'}
-  - TTS: {'已启用' if config.enable_tts else '未启用'}
-  - 资源服务器: {'已启用' if config.resource_enabled else '未启用'}
+  - 流式消息: {"已启用" if getattr(config, "enable_streaming", False) else "未启用"}
+  - TTS: {"已启用" if getattr(config, "enable_tts", False) else "未启用"}
+  - 资源服务器: {"已启用" if config.resource_enabled else "未启用"}
 
 资源管理:
   - 资源目录: {config.resource_dir}
-  - 资源 TTL: {self._format_duration(config.resource_ttl_seconds)}
-  - 最大文件: {config.resource_max_files}
-  - 最大空间: {self._format_bytes(config.resource_max_total_bytes)}
+  - 资源 TTL: {self._format_duration(getattr(config, "resource_ttl_seconds", 0))}
+  - 最大文件: {getattr(config, "resource_max_files", 0)}
+  - 最大空间: {self._format_bytes(getattr(config, "resource_max_total_bytes", 0))}
 
 临时文件:
-  - 临时目录: {config.temp_dir}
-  - 临时 TTL: {self._format_duration(config.temp_ttl_seconds)}
-  - 最大文件: {config.temp_max_files}"""
+  - 临时目录: {getattr(config, "temp_dir", "未知")}
+  - 临时 TTL: {self._format_duration(getattr(config, "temp_ttl_seconds", 0))}
+  - 最大文件: {getattr(config, "temp_max_files", 0)}"""
 
             return MessageChain().message(config_msg)
 
@@ -488,7 +528,9 @@ WebSocket:
         if self._registered:
             return False
         try:
-            target_dict = CONFIG_METADATA_2["platform_group"]["metadata"]["platform"]["items"]
+            target_dict = CONFIG_METADATA_2["platform_group"]["metadata"]["platform"][
+                "items"
+            ]
             for name in list(self._live2d_items):
                 if name not in target_dict:
                     target_dict[name] = self._live2d_items[name]
@@ -502,7 +544,9 @@ WebSocket:
         if not self._registered:
             return False
         try:
-            target_dict = CONFIG_METADATA_2["platform_group"]["metadata"]["platform"]["items"]
+            target_dict = CONFIG_METADATA_2["platform_group"]["metadata"]["platform"][
+                "items"
+            ]
             for name in list(self._live2d_items):
                 if name in target_dict:
                     target_dict.pop(name, None)

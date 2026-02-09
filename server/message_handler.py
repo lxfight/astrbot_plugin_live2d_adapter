@@ -418,7 +418,9 @@ class MessageHandler:
         # 打印每个动作组的详细动作列表
         for group_name, motions in motion_groups.items():
             if isinstance(motions, list):
-                motion_files = [m.get('file', f"motion_{m.get('index', '?')}") for m in motions]
+                motion_files = [
+                    m.get("file", f"motion_{m.get('index', '?')}") for m in motions
+                ]
                 logger.debug(f"  {group_name}: {motion_files}")
 
         logger.debug(f"表情列表: {expressions}")

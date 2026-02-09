@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 
 from aiohttp import web
+
 from astrbot.api import logger
 
 from .resource_manager import ResourceManager
