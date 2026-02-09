@@ -1,0 +1,7 @@
+name: "astrbot_plugin_live2d_adapter"
+author: "lxfight"
+desc: "Live2D 桌面客户端平台适配器，支持 L2D-Bridge Protocol v1.0"
+version: "1.0.0"
+repo: "https://github.com/lxfight/astrbot_plugin_live2d_adapter"
+display_name: "Live2D 适配器"
+
