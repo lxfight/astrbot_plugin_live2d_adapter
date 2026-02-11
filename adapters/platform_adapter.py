@@ -26,6 +26,7 @@ except ImportError as e:
 from ..converters.input_converter import InputMessageConverter
 from ..converters.output_converter import OutputMessageConverter
 from ..core.config import ConfigLike
+from ..core.desktop_request import DesktopRequestManager
 from ..core.protocol import BasePacket
 from ..core.protocol import Protocol as ProtocolClass
 from ..server.resource_manager import ResourceManager
@@ -146,6 +147,9 @@ class Live2DPlatformAdapter(Platform):
         # 当前连接的客户端ID（单一连接约束）
         self.current_client_id: str | None = None
         self._session_to_client_id: dict[str, str] = {}
+
+        # 桌面感知请求管理器
+        self.desktop_request_mgr = DesktopRequestManager()
 
         logger.info(f"[Live2D] 平台适配器已初始化，ID: {self.config.get('id')}")
 
@@ -638,6 +642,11 @@ class Live2DPlatformAdapter(Platform):
             logger.debug(f"[Live2D] 未处理的消息类型: {packet.op}")
 
         ws_server.handler.on_message_received = on_message_received
+
+        # 桌面感知响应路由
+        ws_server.handler.on_desktop_response = (
+            lambda pid, payload: self.desktop_request_mgr.resolve(pid, payload)
+        )
 
     def _run_cleanup(self) -> None:
         """Best-effort cleanup for disk resources and temp files."""

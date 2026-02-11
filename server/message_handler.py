@@ -24,6 +24,8 @@ class MessageHandler:
         self.resource_manager = resource_manager
         # 消息接收回调函数（由平台适配器注入）
         self.on_message_received: Callable | None = None
+        # 桌面感知响应回调（由平台适配器注入）
+        self.on_desktop_response: Callable | None = None
         self.client_states: dict[str, dict] = {}
 
     async def handle_packet(
@@ -81,6 +83,15 @@ class MessageHandler:
 
         elif packet.op == ProtocolClass.OP_STATE_MODEL:
             return await self.handle_state_model(packet, client_id)
+
+        elif packet.op in (
+            ProtocolClass.OP_DESKTOP_WINDOW_LIST,
+            ProtocolClass.OP_DESKTOP_WINDOW_ACTIVE,
+            ProtocolClass.OP_DESKTOP_CAPTURE_SCREENSHOT,
+        ):
+            if self.on_desktop_response:
+                self.on_desktop_response(packet.id, packet.payload)
+            return None
 
         else:
             logger.warning(f"未知的操作码: {packet.op}")

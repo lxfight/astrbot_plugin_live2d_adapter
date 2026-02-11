@@ -516,6 +516,175 @@
 
 ---
 
+## 桌面感知指令
+
+桌面感知允许服务端（LLM 工具调用）查询客户端桌面窗口信息和截取屏幕截图。
+采用请求-响应模式：服务端发送请求，客户端使用相同 `id` 回复结果。
+
+### 1. 获取窗口列表 (desktop.window.list)
+
+**方向**: 服务端 → 客户端（请求），客户端 → 服务端（响应）
+
+**请求**:
+```json
+{
+  "op": "desktop.window.list",
+  "id": "uuid",
+  "ts": 1234567890123
+}
+```
+
+**响应**:
+```json
+{
+  "op": "desktop.window.list",
+  "id": "同请求 uuid",
+  "ts": 1234567890123,
+  "payload": {
+    "windows": [
+      {
+        "id": "window:123:0",
+        "title": "main.py - Visual Studio Code",
+        "processName": "",
+        "isActive": true
+      },
+      {
+        "id": "window:456:0",
+        "title": "Google Chrome",
+        "processName": "",
+        "isActive": false
+      }
+    ]
+  }
+}
+```
+
+**字段说明**:
+- `id`: desktopCapturer 分配的窗口 ID，可用于定向截图
+- `title`: 窗口标题
+- `processName`: 进程名（当前实现为空字符串）
+- `isActive`: 是否为前台活跃窗口（按 z-order 判断，第一个为活跃窗口）
+
+### 2. 获取活跃窗口 (desktop.window.active)
+
+**方向**: 服务端 → 客户端（请求），客户端 → 服务端（响应）
+
+**请求**:
+```json
+{
+  "op": "desktop.window.active",
+  "id": "uuid",
+  "ts": 1234567890123
+}
+```
+
+**响应**:
+```json
+{
+  "op": "desktop.window.active",
+  "id": "同请求 uuid",
+  "ts": 1234567890123,
+  "payload": {
+    "window": {
+      "id": "window:123:0",
+      "title": "main.py - Visual Studio Code",
+      "processName": "",
+      "isActive": true
+    }
+  }
+}
+```
+
+> 当无窗口时 `window` 为 `null`。
+
+### 3. 截取屏幕截图 (desktop.capture.screenshot)
+
+**方向**: 服务端 → 客户端（请求），客户端 → 服务端（响应）
+
+**请求**:
+```json
+{
+  "op": "desktop.capture.screenshot",
+  "id": "uuid",
+  "ts": 1234567890123,
+  "payload": {
+    "target": "desktop",
+    "windowId": "window:123:0",
+    "quality": 80,
+    "maxWidth": 1920
+  }
+}
+```
+
+**请求字段说明**:
+- `target`: 截图目标
+  - `"desktop"` — 全屏截图（主显示器）
+  - `"active"` — 当前活跃窗口（默认）
+  - `"window"` — 指定窗口（需配合 `windowId`）
+- `windowId`: 当 `target` 为 `"window"` 时，指定窗口 ID
+- `quality`: JPEG 压缩质量，1-100（默认 80）
+- `maxWidth`: 最大宽度像素，上限 1920（默认 1280）
+
+**响应**:
+```json
+{
+  "op": "desktop.capture.screenshot",
+  "id": "同请求 uuid",
+  "ts": 1234567890123,
+  "payload": {
+    "image": "data:image/jpeg;base64,/9j/4AAQ...",
+    "width": 1280,
+    "height": 720,
+    "window": {
+      "title": "main.py - Visual Studio Code"
+    }
+  }
+}
+```
+
+**响应字段说明**:
+- `image`: 截图数据，两种格式之一：
+  - **内联 Base64**（≤ 512KB）: `data:image/jpeg;base64,...`
+  - **资源 URL**（> 512KB）: `http://server:9091/resources/{rid}`，客户端自动通过 `resource.prepare` → HTTP PUT 上传
+- `width` / `height`: 实际截图尺寸
+- `window.title`: 截图来源窗口标题
+
+### 4. 应用启动通知（主动感知）
+
+当检测到用户打开新应用时，桌面端主动发送标准 `input.message` 通知服务端。
+无需新操作码，复用现有消息管道。
+
+**方向**: 客户端 → 服务端
+
+```json
+{
+  "op": "input.message",
+  "id": "uuid",
+  "ts": 1234567890123,
+  "payload": {
+    "content": [
+      {
+        "type": "text",
+        "text": "[desktop_event] 用户刚刚打开了新应用: Visual Studio Code\n你可以选择：1) 忽略 2) 对此发表评论或打招呼 3) 调用 capture_screenshot 工具查看屏幕内容后再互动"
+      }
+    ],
+    "metadata": {
+      "userId": "user-001",
+      "sessionId": "session-uuid",
+      "messageType": "notify"
+    }
+  }
+}
+```
+
+**触发规则**:
+- 仅新应用首次出现时触发，窗口切换不触发
+- 系统内置应用（Program Manager、Settings、Task Manager 等）自动过滤
+- 同一应用在 24 小时内启动超过 5 次后自动静默
+- 已关闭的应用再次打开会重新触发
+
+---
+
 ## 资源引用格式
 
 资源可以通过以下三种方式传输：
@@ -560,12 +729,21 @@
 ```
 
 **错误码**:
-- `4001`: 认证失败
-- `4002`: 版本不匹配
-- `4003`: 无效的 payload
-- `4004`: 连接已满
-- `5001`: TTS 失败
-- `5003`: 表演执行失败
+
+| 错误码 | 含义 |
+|--------|------|
+| `4001` | 认证失败 |
+| `4002` | 版本不匹配 |
+| `4003` | 无效的 payload |
+| `4004` | 连接已满 |
+| `4005` | 会话不存在 |
+| `4006` | 资源不存在 |
+| `5001` | TTS 失败 |
+| `5002` | STT 失败 |
+| `5003` | 表演执行失败 |
+| `5004` | 不支持的类型 |
+| `5005` | 文件上传失败 |
+| `5006` | 资源 I/O 错误 |
 
 ---
 
@@ -615,10 +793,13 @@ async def my_handler(event):
 1. 客户端连接 WebSocket: `ws://server:9090/astrbot/live2d`
 2. 客户端发送 `sys.handshake`
 3. 服务端验证 token，返回 `sys.handshake_ack`
-4. 开始心跳保活（每 30 秒）
-5. 客户端发送 `input.message` 等用户输入
-6. 服务端处理后返回 `perform.show` 表演序列
-7. 断开连接时自动清理资源
+4. 服务端发送 `state.ready` 就绪通知
+5. 开始心跳保活（每 30 秒）
+6. 客户端发送 `input.message` 等用户输入
+7. 服务端处理后返回 `perform.show` 表演序列
+8. 服务端可随时发送 `desktop.window.list` / `desktop.window.active` / `desktop.capture.screenshot` 请求，客户端以相同 `id` 响应
+9. 客户端检测到新应用启动时，主动发送 `input.message`（`messageType: "notify"`）
+10. 断开连接时自动清理资源
 
 ---
 
@@ -658,6 +839,8 @@ resource_max_inline_bytes: 262144
 2. **资源管理**: 大文件（> 256KB）建议使用 URL 引用，小文件可以使用 inline base64
 3. **流式输出**: 服务端支持流式发送文本，客户端需要处理 `interrupt: false` 的连续 `perform.show` 消息
 4. **心跳保活**: 客户端需要定期发送 `sys.ping`，超时未响应会被断开连接
+5. **WebSocket 帧限制**: 服务端 `max_size` 为 10MB。截图等大数据建议走资源服务器上传（`resource.prepare` → HTTP PUT），避免超大帧
+6. **桌面感知请求-响应**: `desktop.*` 指令使用相同 `id` 进行请求-响应匹配，客户端必须在响应中保持与请求相同的 `id`。服务端默认超时 15 秒
 
 ---
 
@@ -763,11 +946,15 @@ resource_max_inline_bytes: 262144
 - ✅ state.ready - 客户端就绪
 - ✅ state.playing - 播放状态
 - ✅ state.config - 配置同步
+- ✅ state.model - 模型信息更新
 - ✅ resource.prepare - 资源上传申请
 - ✅ resource.commit - 资源上传确认
 - ✅ resource.get - 资源获取
 - ✅ resource.release - 资源释放
 - ✅ resource.progress - 资源传输进度
+- ✅ desktop.window.list - 桌面窗口列表（请求-响应）
+- ✅ desktop.window.active - 桌面活跃窗口（请求-响应）
+- ✅ desktop.capture.screenshot - 桌面截图（请求-响应，支持资源上传）
 
 **9. 错误处理**
 - ✅ 版本验证（ERROR_VERSION_MISMATCH）

@@ -115,6 +115,10 @@ class Protocol:
     OP_MODEL_SPEAK = "model.speak"
     OP_MODEL_STOP = "model.stop"
 
+    # 桌面感知指令
+    OP_DESKTOP_WINDOW_LIST = "desktop.window.list"
+    OP_DESKTOP_WINDOW_ACTIVE = "desktop.window.active"
+
     # 桌面控制指令
     OP_DESKTOP_WINDOW_SHOW = "desktop.window.show"
     OP_DESKTOP_WINDOW_HIDE = "desktop.window.hide"

@@ -214,7 +214,8 @@ class WebSocketServer:
         )
 
         self.server = await websockets.serve(
-            self.handle_client, self.config.server_host, self.config.server_port
+            self.handle_client, self.config.server_host, self.config.server_port,
+            max_size=10 * 1024 * 1024,
         )
 
         logger.info("WebSocket 服务器已启动")
