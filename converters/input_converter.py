@@ -8,12 +8,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-try:
-    from astrbot.api import logger
-    from astrbot.api.message_components import File, Image, Plain, Record, Video
-except ImportError:
-    logger = None
-    Plain = Image = Record = File = Video = None
+from astrbot.api import logger
+from astrbot.api.message_components import File, Image, Plain, Record, Video
 
 
 class InputMessageConverter:
@@ -58,10 +54,21 @@ class InputMessageConverter:
         Returns:
             包含临时文件数量和总字节数的字典
         """
-        return {
-            "count": len(self._temp_files),
-            "total_bytes": sum(self._temp_files.values()),
-        }
+        temp_root = Path(self.temp_dir)
+        if not temp_root.exists():
+            return {"count": 0, "total_bytes": 0}
+        count = 0
+        total_bytes = 0
+        for p in temp_root.iterdir():
+            if not p.is_file():
+                continue
+            if any(p.name.startswith(pfx) for pfx in self._TEMP_FILE_PREFIXES):
+                try:
+                    total_bytes += p.stat().st_size
+                    count += 1
+                except OSError:
+                    continue
+        return {"count": count, "total_bytes": total_bytes}
 
     def convert(self, content: list[dict[str, Any]]) -> tuple[list, str]:
         """
@@ -380,10 +387,9 @@ class InputMessageConverter:
                     with open(temp_file, "wb") as f:
                         f.write(audio_bytes)
 
-                    if logger:
-                        logger.debug(
-                            f"已保存语音文件: {temp_file}, 格式: {audio_format_raw}"
-                        )
+                    logger.debug(
+                        f"已保存语音文件: {temp_file}, 格式: {audio_format_raw}"
+                    )
                     rec = Record.fromFileSystem(temp_file)
                     rec = self._set_component_url(rec, os.path.abspath(temp_file))
                     return rec, "[语音]"
