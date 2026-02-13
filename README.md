@@ -68,10 +68,10 @@ enable: true
 id: "live2d_default"
 
 # WebSocket 配置
-ws_host: "0.0.0.0"         # WebSocket 监听地址
+ws_host: "127.0.0.1"       # WebSocket 监听地址（建议仅本机）
 ws_port: 9090              # WebSocket 端口
 ws_path: "/astrbot/live2d" # WebSocket 路径
-auth_token: ""             # 鉴权 Token（留空则不鉴权）
+auth_token: ""             # 鉴权密钥（必填；留空将自动生成随机密钥）
 max_connections: 1         # 最大连接数（建议保持为 1）
 kick_old: true             # 新连接时踢掉旧连接
 
@@ -82,7 +82,7 @@ enable_streaming: true     # 是否启用流式输出
 
 # 资源服务器（图片/语音等大资源传输）
 resource_enabled: true
-resource_host: "0.0.0.0"
+resource_host: "127.0.0.1" # 建议仅本机
 resource_port: 9091
 resource_path: "/resources"
 resource_dir: "./data/live2d_resources"
@@ -99,6 +99,11 @@ temp_max_files: 5000
 # 清理任务
 cleanup_interval_seconds: 600  # 10分钟
 ```
+
+安全说明：
+- `auth_token` 现在为强制鉴权，桌面端必须填写一致密钥才能连接。
+- 当 `auth_token` 为空时，插件会自动生成高强度随机密钥并保存到插件数据目录的 `live2d_auth_token.txt`。
+- 请将该密钥填入桌面端“设置 -> 连接配置 -> 认证令牌”。
 
 ## 使用
 

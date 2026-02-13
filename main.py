@@ -19,7 +19,7 @@ class Live2DAdapter(Star):
         "ws_host": {
             "description": "WebSocket 监听地址",
             "type": "string",
-            "hint": "WebSocket 服务监听地址，默认 0.0.0.0",
+            "hint": "WebSocket 服务监听地址，默认 127.0.0.1（建议仅本机访问）",
         },
         "ws_port": {
             "description": "WebSocket 端口",
@@ -32,9 +32,9 @@ class Live2DAdapter(Star):
             "hint": "WebSocket 连接路径，默认 /astrbot/live2d",
         },
         "auth_token": {
-            "description": "认证令牌",
+            "description": "认证密钥",
             "type": "string",
-            "hint": "认证令牌(可选)，用于客户端连接验证",
+            "hint": "认证密钥（必填，留空将自动生成随机值并写入插件数据目录）",
         },
         "max_connections": {
             "description": "最大连接数",
@@ -64,7 +64,7 @@ class Live2DAdapter(Star):
         "resource_host": {
             "description": "资源服务监听地址",
             "type": "string",
-            "hint": "资源服务监听地址，默认 0.0.0.0",
+            "hint": "资源服务监听地址，默认 127.0.0.1（建议仅本机访问）",
         },
         "resource_port": {
             "description": "资源服务端口",
@@ -488,13 +488,19 @@ class Live2DAdapter(Star):
         """显示当前配置"""
         try:
             config = adapter.config_obj
+            token_masked = adapter._mask_token(config.auth_token)
+            token_source = getattr(adapter, "_auth_token_source", "unknown")
+            token_file = getattr(adapter, "_auth_token_file", None)
+            token_file_line = f"\n  - 密钥文件: {token_file}" if token_file else ""
 
             config_msg = f"""[Live2D Adapter] 适配器配置
 
 WebSocket:
   - 地址: {config.server_host}:{config.server_port}
   - 路径: {config.ws_path}
-  - 认证: {"已启用" if config.auth_token else "未启用"}
+  - 认证: 已启用（强制）
+  - 密钥(脱敏): {token_masked}
+  - 密钥来源: {token_source}{token_file_line}
   - 最大连接: {config.max_connections}
 
 功能:

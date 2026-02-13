@@ -5,6 +5,7 @@ import base64
 import json
 import mimetypes
 import re
+import secrets
 from asyncio import Queue
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -59,10 +60,10 @@ from .message_event import Live2DMessageEvent
         "enable": False,
         "id": "live2d_default",
         # WebSocket 服务器配置 | WebSocket Server Configuration
-        "ws_host": "0.0.0.0",  # WebSocket 服务监听地址 | Listen address
+        "ws_host": "127.0.0.1",  # WebSocket 服务监听地址(建议仅本机) | Listen address
         "ws_port": 9090,  # WebSocket 服务端口 | Server port
         "ws_path": "/astrbot/live2d",  # WebSocket 连接路径 | Connection path
-        "auth_token": "",  # 认证令牌(可选) | Auth token (optional)
+        "auth_token": "",  # 认证令牌(必填，留空将自动生成随机密钥) | Auth token
         "max_connections": 1,  # 最大连接数 | Max connections
         "kick_old": True,  # 断开旧连接 | Kick old connections
         # 语音合成 | TTS
@@ -71,7 +72,7 @@ from .message_event import Live2DMessageEvent
         "enable_streaming": True,  # 启用流式推送 | Enable streaming
         # 资源服务器 | Resource Server
         "resource_enabled": True,  # 启用资源服务 | Enable resource server
-        "resource_host": "0.0.0.0",  # 资源服务监听地址 | Resource listen address
+        "resource_host": "127.0.0.1",  # 资源服务监听地址(建议仅本机) | Resource listen address
         "resource_port": 9091,  # 资源服务端口 | Resource port
         "resource_path": "/resources",  # 资源访问路径 | Resource path
         "resource_dir": "live2d_resources",  # 资源存储目录 | Resource directory
@@ -94,6 +95,7 @@ from .message_event import Live2DMessageEvent
 )
 class Live2DPlatformAdapter(Platform):
     """Live2D 平台适配器"""
+    MIN_AUTH_TOKEN_LENGTH = 16
 
     def __init__(
         self, platform_config: dict, platform_settings: dict, event_queue: Queue
@@ -111,11 +113,16 @@ class Live2DPlatformAdapter(Platform):
 
         # 获取插件数据目录
         plugin_data_dir = StarTools.get_data_dir("astrbot-live2d-adapter")
+        auth_token_file = plugin_data_dir / "live2d_auth_token.txt"
+        auth_token, auth_source = self._ensure_auth_token(self.config, auth_token_file)
+        self._auth_token_source = auth_source
+        self._auth_token_file = auth_token_file
 
         # 初始化配置对象
         self.config_obj: ConfigLike = self._create_config_from_dict(
             self.config, plugin_data_dir
         )
+        self._log_auth_token_status(auth_token, auth_source)
 
         # WebSocket 服务器实例
         self.ws_server: WebSocketServer | None = None
@@ -170,6 +177,86 @@ class Live2DPlatformAdapter(Platform):
 
         logger.info(f"[Live2D] 平台适配器已初始化，ID: {self.config.get('id')}")
 
+    @staticmethod
+    def _mask_token(token: str) -> str:
+        if not token:
+            return "(empty)"
+        if len(token) <= 10:
+            return "*" * len(token)
+        return f"{token[:4]}...{token[-4:]}"
+
+    @staticmethod
+    def _generate_auth_token() -> str:
+        return secrets.token_urlsafe(32)
+
+    def _ensure_auth_token(
+        self, config_dict: dict, token_file: Path
+    ) -> tuple[str, str]:
+        configured_token = str(config_dict.get("auth_token", "") or "").strip()
+        if configured_token:
+            if len(configured_token) < self.MIN_AUTH_TOKEN_LENGTH:
+                raise ValueError(
+                    f"auth_token 长度至少需要 {self.MIN_AUTH_TOKEN_LENGTH} 位，请更新配置后重启。"
+                )
+            config_dict["auth_token"] = configured_token
+            return configured_token, "configured"
+
+        persisted_token = ""
+        if token_file.exists():
+            try:
+                persisted_token = token_file.read_text(encoding="utf-8").strip()
+                if (
+                    persisted_token
+                    and len(persisted_token) < self.MIN_AUTH_TOKEN_LENGTH
+                ):
+                    logger.warning(
+                        "[Live2D][Security] 已保存的认证密钥长度不足，正在重新生成随机密钥。"
+                    )
+                    persisted_token = ""
+            except OSError as e:
+                logger.warning(
+                    f"[Live2D][Security] 读取认证密钥文件失败，将重新生成: {e!s}"
+                )
+                persisted_token = ""
+
+        if persisted_token:
+            config_dict["auth_token"] = persisted_token
+            return persisted_token, "generated_persisted"
+
+        generated_token = self._generate_auth_token()
+        config_dict["auth_token"] = generated_token
+        try:
+            token_file.parent.mkdir(parents=True, exist_ok=True)
+            token_file.write_text(generated_token, encoding="utf-8")
+        except OSError as e:
+            logger.warning(
+                f"[Live2D][Security] 写入认证密钥文件失败，本次启动仍会使用随机密钥: {e!s}"
+            )
+        return generated_token, "generated_new"
+
+    def _log_auth_token_status(self, token: str, source: str) -> None:
+        masked = self._mask_token(token)
+        if source == "configured":
+            logger.info(
+                f"[Live2D][Security] 已启用强制鉴权，使用配置中的 auth_token: {masked}"
+            )
+            return
+
+        logger.warning(
+            "[Live2D][Security] 未检测到 auth_token，已启用随机生成密钥并强制鉴权。"
+        )
+        logger.warning(
+            f"[Live2D][Security] 认证密钥来源: {source}，文件: {self._auth_token_file}"
+        )
+        if source == "generated_new":
+            logger.warning(
+                f"[Live2D][Security] 请在桌面端“连接配置 -> 认证令牌”填写以下密钥后再连接: {token}"
+            )
+        else:
+            logger.warning(
+                f"[Live2D][Security] 当前认证密钥: {masked}（如需查看明文请打开密钥文件）"
+            )
+
     def _create_config_from_dict(
         self, config_dict: dict, plugin_data_dir: Path
     ) -> ConfigLike:
@@ -190,7 +277,7 @@ class Live2DPlatformAdapter(Platform):
 
             @property
             def server_host(self) -> str:
-                return self._data.get("ws_host", "0.0.0.0")
+                return self._data.get("ws_host", "127.0.0.1")
 
             @property
             def server_port(self) -> int:
@@ -198,7 +285,7 @@ class Live2DPlatformAdapter(Platform):
 
             @property
             def auth_token(self) -> str:
-                return self._data.get("auth_token", "")
+                return str(self._data.get("auth_token", "") or "").strip()
 
             @property
             def ws_path(self) -> str:

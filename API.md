@@ -811,10 +811,10 @@ enable: true
 id: "live2d_default"
 
 # WebSocket 配置
-ws_host: "0.0.0.0"
+ws_host: "127.0.0.1"
 ws_port: 9090
 ws_path: "/astrbot/live2d"
-auth_token: ""
+auth_token: ""   # 必填；留空会自动生成并写入 live2d_auth_token.txt
 max_connections: 1
 kick_old: true
 
@@ -824,7 +824,7 @@ tts_mode: "local"
 
 # 资源服务器
 resource_enabled: true
-resource_host: "0.0.0.0"
+resource_host: "127.0.0.1"
 resource_port: 9091
 resource_path: "/resources"
 resource_dir: "./data/live2d_resources"

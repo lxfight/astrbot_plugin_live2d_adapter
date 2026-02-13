@@ -1,5 +1,7 @@
 """消息处理器"""
 
+import hmac
+import time
 from collections.abc import Callable
 
 from astrbot.api import logger
@@ -123,14 +125,28 @@ class MessageHandler:
                 packet.id,
             )
 
-        # 验证 Token
-        if self.config.auth_token:
-            client_token = payload.get("token", "")
-            if client_token != self.config.auth_token:
-                logger.error(f"Token 验证失败: {client_token}")
-                return ProtocolClass.create_error_packet(
-                    ProtocolClass.ERROR_AUTH_FAILED, "认证失败", packet.id
-                )
+        # 验证 Token（强制）
+        server_token = (self.config.auth_token or "").strip()
+        if not server_token:
+            logger.error("服务端 auth_token 为空，拒绝连接")
+            return ProtocolClass.create_error_packet(
+                ProtocolClass.ERROR_AUTH_FAILED,
+                "服务端未配置认证密钥，请联系管理员检查配置",
+                packet.id,
+            )
+
+        client_token = str(payload.get("token", "") or "").strip()
+        if not client_token:
+            logger.error("客户端未提供认证密钥")
+            return ProtocolClass.create_error_packet(
+                ProtocolClass.ERROR_AUTH_FAILED, "缺少认证密钥", packet.id
+            )
+
+        if not hmac.compare_digest(client_token, server_token):
+            logger.error("Token 验证失败")
+            return ProtocolClass.create_error_packet(
+                ProtocolClass.ERROR_AUTH_FAILED, "认证失败", packet.id
+            )
 
         # 生成会话信息
         # Live2D 客户端使用固定的 client_id 作为 session_id
@@ -140,6 +156,7 @@ class MessageHandler:
         self.client_states.setdefault(client_id, {})["session"] = {
             "session_id": session_id,
             "user_id": user_id,
+            "connect_time": time.time(),
         }
 
         logger.info(
