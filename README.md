@@ -1,6 +1,8 @@
 # AstrBot Live2D Adapter
 
-AstrBot 的 Live2D 平台适配器插件，负责桌面端与 AstrBot 间的协议桥接。  
+[![QQ Group](https://img.shields.io/badge/QQ群-953245617-blue?style=flat-square&logo=tencent-qq)](https://qm.qq.com/cgi-bin/qm/qr?k=WdyqoP-AOEXqGAN08lOFfVSguF2EmBeO&jump_from=webapi&authKey=tPyfv90TVYSGVhbAhsAZCcSBotJuTTLf03wnn7/lQZPUkWfoQ/J8e9nkAipkOzwh)
+
+AstrBot 的 Live2D 平台适配器插件，负责桌面端与 AstrBot 间的协议桥接。
 支持文本/图片/语音输入、表演序列回传、资源服务与桌面能力调用。
 
 ## 快速入口
