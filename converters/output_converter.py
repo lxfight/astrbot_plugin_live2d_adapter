@@ -62,7 +62,6 @@ class OutputMessageConverter:
 
     def __init__(
         self,
-        enable_tts: bool = True,
         resource_manager: Any | None = None,
         resource_config: dict[str, Any] | None = None,
         client_model_info: dict[str, Any] | None = None,
@@ -70,12 +69,10 @@ class OutputMessageConverter:
         """初始化转换器
 
         Args:
-            enable_tts: 是否启用 TTS
             resource_manager: 资源管理器（处理本地文件转资源）
             resource_config: 资源配置（inline 限制等）
             client_model_info: 客户端模型信息（动作组和表情列表）
         """
-        self.enable_tts = enable_tts
         self.resource_manager = resource_manager
         self.resource_config = resource_config or {}
         self.client_model_info = client_model_info or {}
@@ -98,6 +95,9 @@ class OutputMessageConverter:
 
         sequence = []
         full_text = ""
+        has_audio_record = bool(
+            Record and any(isinstance(component, Record) for component in message_chain.chain)
+        )
 
         for component in message_chain.chain:
             if Plain and isinstance(component, Plain):
@@ -113,8 +113,8 @@ class OutputMessageConverter:
                     )
                 )
 
-                # 如果启用了 TTS 且提供了 TTS URL
-                if self.enable_tts and tts_url:
+                # 若 AstrBot 附带了 tts_url 且消息链内没有独立音频，则按语音元素播放
+                if tts_url and not has_audio_record:
                     tts_element = self._build_tts_element(text=text, url=tts_url)
                     if tts_element:
                         sequence.append(tts_element)

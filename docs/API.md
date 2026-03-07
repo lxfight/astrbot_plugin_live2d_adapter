@@ -819,8 +819,7 @@ max_connections: 1
 kick_old: true
 
 # 功能配置
-enable_tts: false
-tts_mode: "local"
+enable_streaming: true
 
 # 资源服务器
 resource_enabled: true
@@ -830,6 +829,8 @@ resource_path: "/resources"
 resource_dir: "./data/live2d_resources"
 resource_max_inline_bytes: 262144
 ```
+
+> 语音输出由 AstrBot 的 TTS 结果或 `Record` 音频消息直接驱动，适配器不再提供独立的 TTS 开关。
 
 ---
 

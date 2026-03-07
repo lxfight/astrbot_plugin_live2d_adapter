@@ -46,11 +46,6 @@ class Live2DAdapter(Star):
             "type": "bool",
             "hint": "新连接时是否断开旧连接，默认 true",
         },
-        "enable_tts": {
-            "description": "启用 TTS",
-            "type": "bool",
-            "hint": "是否启用语音合成功能，默认 false",
-        },
         "enable_streaming": {
             "description": "启用流式推送",
             "type": "bool",
@@ -299,11 +294,6 @@ class Live2DAdapter(Star):
                 if getattr(adapter.config_obj, "enable_streaming", False)
                 else "未启用"
             )
-            tts_status = (
-                "已启用"
-                if getattr(adapter.config_obj, "enable_tts", False)
-                else "未启用"
-            )
 
             status_msg = f"""[Live2D Adapter] 适配器状态
 
@@ -316,7 +306,7 @@ class Live2DAdapter(Star):
   - WebSocket: {ws_status} ({ws_addr})
   - 资源服务器: {resource_server_status} {f"({resource_addr})" if resource_addr else ""}
   - 流式消息: {streaming_status}
-  - TTS: {tts_status}"""
+  - 语音输出: 跟随 AstrBot 的 TTS/音频消息"""
 
             return MessageEventResult().message(status_msg)
 
@@ -515,7 +505,7 @@ WebSocket:
 
 功能:
   - 流式消息: {"已启用" if getattr(config, "enable_streaming", False) else "未启用"}
-  - TTS: {"已启用" if getattr(config, "enable_tts", False) else "未启用"}
+  - 语音输出: 跟随 AstrBot 的 TTS/音频消息
   - 资源服务器: {"已启用" if config.resource_enabled else "未启用"}
 
 资源管理:

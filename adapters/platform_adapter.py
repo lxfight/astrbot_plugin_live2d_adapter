@@ -66,8 +66,6 @@ from .message_event import Live2DMessageEvent
         "auth_token": "",  # 认证令牌(必填，留空将自动生成随机密钥) | Auth token
         "max_connections": 1,  # 最大连接数 | Max connections
         "kick_old": True,  # 断开旧连接 | Kick old connections
-        # 语音合成 | TTS
-        "enable_tts": False,  # 启用TTS | Enable TTS
         # 流式消息 | Streaming
         "enable_streaming": True,  # 启用流式推送 | Enable streaming
         # 资源服务器 | Resource Server
@@ -158,7 +156,6 @@ class Live2DPlatformAdapter(Platform):
             resource_manager=self.resource_manager,
         )
         self.output_converter = OutputMessageConverter(
-            enable_tts=self.config_obj.enable_tts,
             resource_manager=self.resource_manager,
             resource_config={
                 "max_inline_bytes": self.config_obj.resource_max_inline_bytes,
@@ -298,10 +295,6 @@ class Live2DPlatformAdapter(Platform):
             @property
             def kick_old(self) -> bool:
                 return self._data.get("kick_old", True)
-
-            @property
-            def enable_tts(self) -> bool:
-                return self._data.get("enable_tts", False)
 
             @property
             def resource_enabled(self) -> bool:
@@ -566,7 +559,6 @@ class Live2DPlatformAdapter(Platform):
                 websocket_server=self.ws_server,
                 client_id=client_id,
                 config={
-                    "enable_tts": self.config.get("enable_tts", False),
                     "enable_streaming": self.config.get("enable_streaming", True),
                 },
                 resource_manager=self.resource_manager,

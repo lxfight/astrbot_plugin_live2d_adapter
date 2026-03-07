@@ -68,9 +68,6 @@ class ConfigLike(Protocol):
     def temp_max_files(self) -> int: ...
 
     @property
-    def enable_tts(self) -> bool: ...
-
-    @property
     def enable_streaming(self) -> bool: ...
 
     @property
