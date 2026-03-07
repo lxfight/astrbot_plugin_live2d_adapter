@@ -37,6 +37,8 @@ resource_enabled: true
 resource_host: "127.0.0.1"
 resource_port: 9091
 resource_path: "/resources"
+resource_dir: "live2d_resources"
+temp_dir: "live2d_temp"
 ```
 
 ### 关于 `auth_token`
@@ -45,6 +47,14 @@ resource_path: "/resources"
 - 如果留空，插件会自动生成高强度随机密钥，并写入：
   `data/plugin_data/astrbot-live2d-adapter/live2d_auth_token.txt`
 - 请把该密钥填到桌面端「设置 -> 连接配置 -> 认证令牌」。
+
+### 关于数据目录与本地文件
+
+- 插件受管文件统一落在 `data/plugin_data/astrbot-live2d-adapter/` 下。
+- `resource_dir` 默认是 `live2d_resources`，`temp_dir` 默认是 `live2d_temp`；它们都会解析到插件数据目录内。
+- 这两个目录现在**不能**配置到插件数据目录外，越界的绝对路径会被拒绝。
+- 桌面端传入的 `file:///` 图片、语音、文件、视频，会先复制到 `temp_dir` 再进入 AstrBot 流程。
+- 适配器下发本地资源时，也会先复制到 `resource_dir`，再通过资源服务暴露；不会直接把原始 `file://` 路径返回给桌面端。
 
 ---
 

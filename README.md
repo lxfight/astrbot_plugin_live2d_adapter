@@ -50,6 +50,7 @@ resource_host: "127.0.0.1"
 resource_port: 9091
 resource_path: "/resources"
 resource_dir: "live2d_resources"
+temp_dir: "live2d_temp"
 resource_token: ""          # 为空时复用 auth_token
 ```
 
@@ -59,6 +60,16 @@ resource_token: ""          # 为空时复用 auth_token
 - 若配置为空，插件会自动生成随机密钥并保存到：
   `data/plugin_data/astrbot-live2d-adapter/live2d_auth_token.txt`
 - 请将该值填入桌面端「设置 -> 连接配置 -> 认证令牌」。
+
+### 数据目录约束
+
+- 插件所有受管资源都以 `data/plugin_data/astrbot-live2d-adapter/` 为根目录。
+- `resource_dir`、`temp_dir` 建议使用相对路径，分别默认解析到：
+  - `data/plugin_data/astrbot-live2d-adapter/live2d_resources`
+  - `data/plugin_data/astrbot-live2d-adapter/live2d_temp`
+- 这两个目录现在**必须位于插件数据目录内**；若配置为越界的绝对路径，适配器会直接拒绝启动。
+- 输入侧遇到桌面端传入的 `file:///` 本地文件时，会先复制到 `temp_dir` 再参与后续处理。
+- 输出侧遇到本地文件时，会先复制到 `resource_dir` 并通过资源服务下发，不再直接暴露原始 `file://` 路径。
 
 ## 云服务器部署要点
 

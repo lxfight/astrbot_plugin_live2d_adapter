@@ -8,7 +8,7 @@ import re
 import secrets
 from asyncio import Queue
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
 
 try:
     from astrbot.api import logger
@@ -403,7 +403,21 @@ class Live2DPlatformAdapter(Platform):
         class ConfigAdapter:
             def __init__(self, data: dict, base_dir: Path):
                 self._data = data
-                self._base_dir = base_dir
+                self._base_dir = base_dir.resolve()
+
+            def _resolve_managed_dir(self, key: str, default_name: str) -> str:
+                raw_value = str(self._data.get(key, default_name) or default_name).strip()
+                candidate = Path(raw_value)
+                if not candidate.is_absolute():
+                    candidate = self._base_dir / candidate
+                resolved = candidate.resolve()
+                try:
+                    resolved.relative_to(self._base_dir)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"{key} 必须位于插件数据目录内: {self._base_dir}"
+                    ) from exc
+                return str(resolved)
 
             @property
             def server_host(self) -> str:
@@ -447,11 +461,7 @@ class Live2DPlatformAdapter(Platform):
 
             @property
             def resource_dir(self) -> str:
-                default_dir = self._base_dir / "live2d_resources"
-                resource_dir = self._data.get("resource_dir", str(default_dir))
-                if not Path(resource_dir).is_absolute():
-                    resource_dir = str(self._base_dir / resource_dir)
-                return resource_dir
+                return self._resolve_managed_dir("resource_dir", "live2d_resources")
 
             @property
             def resource_base_url(self) -> str:
@@ -486,11 +496,7 @@ class Live2DPlatformAdapter(Platform):
 
             @property
             def temp_dir(self) -> str:
-                default_dir = self._base_dir / "live2d_temp"
-                temp_dir = self._data.get("temp_dir", str(default_dir))
-                if not Path(temp_dir).is_absolute():
-                    temp_dir = str(self._base_dir / temp_dir)
-                return temp_dir
+                return self._resolve_managed_dir("temp_dir", "live2d_temp")
 
             @property
             def temp_ttl_seconds(self) -> int:
@@ -1013,10 +1019,12 @@ class Live2DPlatformAdapter(Platform):
                 return None, None
 
         if image_data.startswith("file:///"):
-            file_path = unquote(urlparse(image_data).path)
-            if file_path.startswith("/") and len(file_path) >= 3 and file_path[2] == ":":
-                file_path = file_path[1:]
-            p = Path(file_path)
+            staged_file = self.input_converter.copy_local_file_to_temp(
+                image_data, "live2d_img_"
+            )
+            if not staged_file:
+                return None, None
+            p = Path(staged_file)
             if p.exists() and p.is_file():
                 data = p.read_bytes()
                 mime_type, _ = mimetypes.guess_type(str(p))

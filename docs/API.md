@@ -826,11 +826,15 @@ resource_enabled: true
 resource_host: "127.0.0.1"
 resource_port: 9091
 resource_path: "/resources"
-resource_dir: "./data/live2d_resources"
+resource_dir: "live2d_resources"
+temp_dir: "live2d_temp"
 resource_max_inline_bytes: 262144
 ```
 
 > 语音输出由 AstrBot 的 TTS 结果或 `Record` 音频消息直接驱动，适配器不再提供独立的 TTS 开关。
+>
+> `resource_dir` 与 `temp_dir` 都会被限制在 `data/plugin_data/astrbot-live2d-adapter/` 下；越界绝对路径会被拒绝。
+> 输入侧的 `file:///` 会先复制到 `temp_dir`，输出侧的本地文件会先复制到 `resource_dir` 后再对外提供。
 
 ---
 
@@ -842,6 +846,7 @@ resource_max_inline_bytes: 262144
 4. **心跳保活**: 客户端需要定期发送 `sys.ping`，超时未响应会被断开连接
 5. **WebSocket 帧限制**: 服务端 `max_size` 为 10MB。截图等大数据建议走资源服务器上传（`resource.prepare` → HTTP PUT），避免超大帧
 6. **桌面感知请求-响应**: `desktop.*` 指令使用相同 `id` 进行请求-响应匹配，客户端必须在响应中保持与请求相同的 `id`。服务端默认超时 15 秒
+7. **目录约束**: `resource_dir`、`temp_dir` 只能位于插件数据目录内；本地 `file:///` 不会直接透传，而会先复制到插件数据目录再处理
 
 ---
 

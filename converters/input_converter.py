@@ -3,10 +3,11 @@
 import base64
 import os
 import re
-import tempfile
+import shutil
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 from astrbot.api import logger
 from astrbot.api.message_components import File, Image, Plain, Record, Video
@@ -41,7 +42,9 @@ class InputMessageConverter:
             temp_max_files: Max number of temp files. Set to 0/None to disable.
             resource_manager: 资源管理器（处理 rid 引用）
         """
-        self.temp_dir = temp_dir or tempfile.gettempdir()
+        if not temp_dir:
+            raise ValueError("temp_dir is required for InputMessageConverter")
+        self.temp_dir = str(Path(temp_dir).resolve())
         Path(self.temp_dir).mkdir(parents=True, exist_ok=True)
         self.temp_ttl_seconds = int(temp_ttl_seconds or 0) or None
         self.temp_max_total_bytes = int(temp_max_total_bytes or 0) or None
@@ -238,6 +241,48 @@ class InputMessageConverter:
 
         return {"removed": removed, "removed_bytes": removed_bytes}
 
+    def _reserve_temp_space(self, size: int) -> bool:
+        try:
+            self.cleanup_temp_files(reserve_bytes=size, reserve_files=1)
+        except Exception as e:
+            logger.error(f"清理临时文件失败: {e}")
+            return False
+        return True
+
+    def _write_temp_bytes(
+        self, data: bytes, prefix: str, suffix: str = ""
+    ) -> str | None:
+        if not self._reserve_temp_space(len(data)):
+            return None
+        temp_path = Path(self.temp_dir) / f"{prefix}{os.urandom(8).hex()}{suffix}"
+        temp_path.write_bytes(data)
+        return str(temp_path.resolve())
+
+    def _resolve_file_url(self, file_url: str) -> Path | None:
+        if not isinstance(file_url, str) or not file_url.startswith("file:///"):
+            return None
+        file_path = unquote(urlparse(file_url).path)
+        if os.name == "nt" and file_path.startswith("/") and len(file_path) >= 3 and file_path[2] == ":":
+            file_path = file_path[1:]
+        path = Path(file_path)
+        if not path.exists() or not path.is_file():
+            return None
+        return path
+
+    def copy_local_file_to_temp(self, source: str | Path, prefix: str) -> str | None:
+        path: Path | None
+        if isinstance(source, Path):
+            path = source
+        else:
+            path = self._resolve_file_url(source) or Path(source)
+        if not path.exists() or not path.is_file():
+            return None
+        if not self._reserve_temp_space(path.stat().st_size):
+            return None
+        temp_path = Path(self.temp_dir) / f"{prefix}{os.urandom(8).hex()}{path.suffix}"
+        shutil.copy2(path, temp_path)
+        return str(temp_path.resolve())
+
     def convert_image(self, item: dict[str, Any]) -> Any | None:
         """将图片描述字典转换为 AstrBot Image 组件
 
@@ -278,25 +323,16 @@ class InputMessageConverter:
                     image_format, base64_data = match.groups()
                     image_bytes = base64.b64decode(base64_data)
 
-                    try:
-                        self.cleanup_temp_files(
-                            reserve_bytes=len(image_bytes),
-                            reserve_files=1,
-                        )
-                    except Exception as e:
-                        logger.error(f"清理临时文件失败: {e}")
+                    temp_file = self._write_temp_bytes(
+                        image_bytes,
+                        "live2d_img_",
+                        f".{image_format}",
+                    )
+                    if not temp_file:
                         return None
 
-                    # 保存到临时文件
-                    temp_file = os.path.join(
-                        self.temp_dir,
-                        f"live2d_img_{os.urandom(8).hex()}.{image_format}",
-                    )
-                    with open(temp_file, "wb") as f:
-                        f.write(image_bytes)
-
                     img = Image.fromFileSystem(temp_file)
-                    return self._set_component_url(img, os.path.abspath(temp_file))
+                    return self._set_component_url(img, temp_file)
             except Exception as e:
                 logger.error(f"解析 Base64 图片失败: {e}")
                 return None
@@ -307,9 +343,11 @@ class InputMessageConverter:
                 img = Image.fromURL(url)
                 return self._set_component_url(img, url)
             elif url.startswith("file:///"):
-                local_path = url[8:] if os.name == "nt" else url[7:]
-                img = Image.fromFileSystem(local_path)
-                return self._set_component_url(img, os.path.abspath(local_path))
+                temp_file = self.copy_local_file_to_temp(url, "live2d_img_")
+                if not temp_file:
+                    return None
+                img = Image.fromFileSystem(temp_file)
+                return self._set_component_url(img, temp_file)
 
         return None
 
@@ -370,28 +408,19 @@ class InputMessageConverter:
 
                     audio_bytes = base64.b64decode(base64_data)
 
-                    try:
-                        self.cleanup_temp_files(
-                            reserve_bytes=len(audio_bytes),
-                            reserve_files=1,
-                        )
-                    except Exception as e:
-                        logger.error(f"清理临时文件失败: {e}")
-                        return None, None
-
-                    # 保存到临时文件
-                    temp_file = os.path.join(
-                        self.temp_dir,
-                        f"live2d_voice_{os.urandom(8).hex()}.{audio_ext}",
+                    temp_file = self._write_temp_bytes(
+                        audio_bytes,
+                        "live2d_voice_",
+                        f".{audio_ext}",
                     )
-                    with open(temp_file, "wb") as f:
-                        f.write(audio_bytes)
+                    if not temp_file:
+                        return None, None
 
                     logger.debug(
                         f"已保存语音文件: {temp_file}, 格式: {audio_format_raw}"
                     )
                     rec = Record.fromFileSystem(temp_file)
-                    rec = self._set_component_url(rec, os.path.abspath(temp_file))
+                    rec = self._set_component_url(rec, temp_file)
                     return rec, "[语音]"
             except Exception as e:
                 logger.error(f"解析 Base64 音频失败: {e}")
@@ -399,9 +428,11 @@ class InputMessageConverter:
         # 降级处理 URL
         if url and Record:
             if url.startswith("file:///"):
-                local_path = url[8:] if os.name == "nt" else url[7:]
-                rec = Record.fromFileSystem(local_path)
-                rec = self._set_component_url(rec, os.path.abspath(local_path))
+                temp_file = self.copy_local_file_to_temp(url, "live2d_voice_")
+                if not temp_file:
+                    return None, None
+                rec = Record.fromFileSystem(temp_file)
+                rec = self._set_component_url(rec, temp_file)
                 return rec, "[语音]"
             if url.startswith("http://") or url.startswith("https://"):
                 rec = Record.fromURL(url)
@@ -443,15 +474,6 @@ class InputMessageConverter:
                     return None, None
                 file_bytes = base64.b64decode(b64_data)
 
-                try:
-                    self.cleanup_temp_files(
-                        reserve_bytes=len(file_bytes),
-                        reserve_files=1,
-                    )
-                except Exception as e:
-                    logger.error(f"清理临时文件失败: {e}")
-                    return None, None
-
                 suffix = ""
                 try:
                     import mimetypes
@@ -460,15 +482,16 @@ class InputMessageConverter:
                 except Exception:
                     suffix = ""
 
-                temp_file = os.path.join(
-                    self.temp_dir,
-                    f"live2d_file_{os.urandom(8).hex()}{suffix}",
+                temp_file = self._write_temp_bytes(
+                    file_bytes,
+                    "live2d_file_",
+                    suffix,
                 )
-                with open(temp_file, "wb") as f:
-                    f.write(file_bytes)
+                if not temp_file:
+                    return None, None
 
                 return (
-                    File(name=str(name), file=os.path.abspath(temp_file)),
+                    File(name=str(name), file=temp_file),
                     f"[文件] {name}",
                 )
             except Exception as e:
@@ -477,9 +500,11 @@ class InputMessageConverter:
 
         if url:
             if url.startswith("file:///"):
-                local_path = url[8:] if os.name == "nt" else url[7:]
+                temp_file = self.copy_local_file_to_temp(url, "live2d_file_")
+                if not temp_file:
+                    return None, None
                 return File(
-                    name=str(name), file=os.path.abspath(local_path)
+                    name=str(name), file=temp_file
                 ), f"[文件] {name}"
             if url.startswith("http://") or url.startswith("https://"):
                 return File(name=str(name), url=url), f"[文件] {name}"
@@ -528,20 +553,13 @@ class InputMessageConverter:
                     )
 
                     video_bytes = base64.b64decode(base64_data)
-                    try:
-                        self.cleanup_temp_files(
-                            reserve_bytes=len(video_bytes),
-                            reserve_files=1,
-                        )
-                    except Exception as e:
-                        logger.error(f"清理临时文件失败: {e}")
-                        return None, None
-                    temp_file = os.path.join(
-                        self.temp_dir,
-                        f"live2d_video_{os.urandom(8).hex()}.{video_ext}",
+                    temp_file = self._write_temp_bytes(
+                        video_bytes,
+                        "live2d_video_",
+                        f".{video_ext}",
                     )
-                    with open(temp_file, "wb") as f:
-                        f.write(video_bytes)
+                    if not temp_file:
+                        return None, None
                     return Video.fromFileSystem(temp_file), "[视频]"
             except Exception as e:
                 logger.error(f"解析 Base64 视频失败: {e}")
@@ -549,8 +567,10 @@ class InputMessageConverter:
 
         if url:
             if url.startswith("file:///"):
-                local_path = url[8:] if os.name == "nt" else url[7:]
-                return Video.fromFileSystem(os.path.abspath(local_path)), "[视频]"
+                temp_file = self.copy_local_file_to_temp(url, "live2d_video_")
+                if not temp_file:
+                    return None, None
+                return Video.fromFileSystem(temp_file), "[视频]"
             if url.startswith("http://") or url.startswith("https://"):
                 return Video.fromURL(url), "[视频]"
 

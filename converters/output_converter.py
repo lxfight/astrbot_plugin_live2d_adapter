@@ -5,6 +5,11 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any
 
+try:
+    from astrbot.api import logger
+except ImportError:
+    logger = None
+
 if TYPE_CHECKING:
     from astrbot.api.event import MessageChain as MessageChainType
 else:
@@ -348,17 +353,19 @@ class OutputMessageConverter:
         if not os.path.isfile(file_path):
             return None
         if not self.resource_manager:
-            file_url = (
-                f"file:///{file_path}" if os.name == "nt" else f"file://{file_path}"
-            )
-            return {"url": file_url}
+            if logger:
+                logger.warning(
+                    f"[Live2D] 本地{kind}文件需要 resource_manager 才能安全下发，已跳过: {file_path}"
+                )
+            return None
         try:
             return self.resource_manager.build_reference_from_file(file_path, kind)
-        except Exception:
-            file_url = (
-                f"file:///{file_path}" if os.name == "nt" else f"file://{file_path}"
-            )
-            return {"url": file_url}
+        except Exception as e:
+            if logger:
+                logger.warning(
+                    f"[Live2D] 本地{kind}文件复制到资源目录失败，已跳过: {file_path}; error={e}"
+                )
+            return None
 
     def _build_image_element(self, image: Any) -> dict[str, Any] | None:
         image_path = self._get_image_url(image)
