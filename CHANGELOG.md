@@ -2,6 +2,30 @@
 
 本文档记录 Live2D Adapter 插件的所有重要更新。
 
+## [1.2.0] - 2026-03-07
+
+### 修复与改进 🔧
+
+#### 语音输出行为统一
+- 移除适配器侧独立的 `enable_tts` 开关，改为直接跟随 AstrBot 实际产出的 TTS/音频消息行为
+- 避免 `tts_url` 与 `Record` 同时存在时出现重复播放
+- 管理命令与配置展示同步更新为“语音输出跟随 AstrBot”
+
+#### Dashboard 配置显示修复
+- 改为通过平台适配器标准的 `config_metadata` / `i18n_resources` 注册配置元数据
+- 修复 Dashboard 平台适配器编辑界面显示 `platform_group.platform.*` 国际化键而不是可读文案的问题
+- 删除旧的全局 `CONFIG_METADATA_2` 注入逻辑，避免污染平台配置元数据
+
+#### 插件数据目录收敛
+- 强制 `resource_dir`、`temp_dir` 必须位于 `data/plugin_data/astrbot-live2d-adapter/` 下，拒绝越界绝对路径
+- 输入侧遇到 `file:///` 图片、语音、文件、视频时，统一先复制到插件 `temp_dir` 再进入后续处理流程
+- 输出侧遇到本地文件时，统一通过 `resource_manager` 复制到插件 `resource_dir` 后再对外提供，不再直接回传原始 `file://` 路径
+- 桌面截图 `file:///` 结果改为先复制到插件目录后再读取
+
+#### 文档同步
+- 更新 `README.md`、`docs/API.md`、`docs/TUTORIAL.zh-CN.md` 中关于 TTS 行为、目录约束和本地文件处理的说明
+- 明确插件受管资源统一落在 `data/plugin_data/astrbot-live2d-adapter/` 下
+
 ## [1.1.0] - 2026-02-07
 
 ### 新增功能 ✨
@@ -110,13 +134,13 @@ async def cmd_status(self, event: AstrMessageEvent) -> MessageChain:
 
 ## 未来计划 🚀
 
-### v1.2.0 (计划中)
+### v1.3.0 (计划中)
 - [ ] 健康检查端点 (`/health`, `/metrics`)
 - [ ] 性能指标收集
 - [ ] 结构化日志增强
 - [ ] 更多管理命令（disconnect、ping、test_motion 等）
 
-### v1.3.0 (计划中)
+### v1.4.0 (计划中)
 - [ ] 事件钩子系统
 - [ ] 多客户端路由增强
 - [ ] 消息批处理优化
