@@ -52,6 +52,137 @@ from ..server.websocket_server import WebSocketServer
 from .message_event import Live2DMessageEvent
 
 
+LIVE2D_CONFIG_METADATA = {
+    "ws_host": {
+        "description": "WebSocket 监听地址",
+        "type": "string",
+        "hint": "WebSocket 服务监听地址，默认 127.0.0.1（建议仅本机访问）",
+    },
+    "ws_port": {
+        "description": "WebSocket 端口",
+        "type": "int",
+        "hint": "WebSocket 服务端口，默认 9090",
+    },
+    "ws_path": {
+        "description": "WebSocket 路径",
+        "type": "string",
+        "hint": "WebSocket 连接路径，默认 /astrbot/live2d",
+    },
+    "auth_token": {
+        "description": "认证密钥",
+        "type": "string",
+        "hint": "认证密钥（必填，留空将自动生成随机值并写入插件数据目录）",
+    },
+    "max_connections": {
+        "description": "最大连接数",
+        "type": "int",
+        "hint": "允许的最大客户端连接数，默认 1",
+    },
+    "kick_old": {
+        "description": "断开旧连接",
+        "type": "bool",
+        "hint": "新连接时是否断开旧连接，默认 true",
+    },
+    "enable_streaming": {
+        "description": "启用流式推送",
+        "type": "bool",
+        "hint": "是否启用流式消息推送，默认 true",
+    },
+    "resource_enabled": {
+        "description": "启用资源服务",
+        "type": "bool",
+        "hint": "是否启用资源服务器，默认 true",
+    },
+    "resource_host": {
+        "description": "资源服务监听地址",
+        "type": "string",
+        "hint": "资源服务监听地址，默认 127.0.0.1（仅本机访问）",
+    },
+    "resource_port": {
+        "description": "资源服务端口",
+        "type": "int",
+        "hint": "资源服务端口，默认 9091",
+    },
+    "resource_path": {
+        "description": "资源访问路径",
+        "type": "string",
+        "hint": "资源访问路径，默认 /resources",
+    },
+    "resource_dir": {
+        "description": "资源存储目录",
+        "type": "string",
+        "hint": "资源文件存储目录，默认 data/plugin_data/astrbot_lice2d-adapter/live2d_resources",
+    },
+    "resource_base_url": {
+        "description": "资源基础 URL",
+        "type": "string",
+        "hint": "资源基础 URL，留空则自动生成",
+    },
+    "resource_token": {
+        "description": "资源访问令牌",
+        "type": "string",
+        "hint": "资源访问令牌，留空则复用 auth_token",
+    },
+    "resource_max_inline_bytes": {
+        "description": "内联资源最大字节",
+        "type": "int",
+        "hint": "内联资源最大字节数，默认 262144 (256KB)",
+    },
+    "resource_ttl_seconds": {
+        "description": "资源 TTL(秒)",
+        "type": "int",
+        "hint": "资源生存时间(秒)，默认 604800 (7天)",
+    },
+    "resource_max_total_bytes": {
+        "description": "最大总字节",
+        "type": "int",
+        "hint": "资源最大总字节数，默认 1073741824 (1GB)",
+    },
+    "resource_max_files": {
+        "description": "最大文件数",
+        "type": "int",
+        "hint": "资源最大文件数，默认 2000",
+    },
+    "temp_dir": {
+        "description": "临时文件目录",
+        "type": "string",
+        "hint": "临时文件存储目录，默认 data/plugin_data/astrbot_lice2d-adapter/live2d_temp",
+    },
+    "temp_ttl_seconds": {
+        "description": "临时文件 TTL(秒)",
+        "type": "int",
+        "hint": "临时文件生存时间(秒)，默认 21600 (6小时)",
+    },
+    "temp_max_total_bytes": {
+        "description": "临时文件最大总字节",
+        "type": "int",
+        "hint": "临时文件最大总字节数，默认 268435456 (256MB)",
+    },
+    "temp_max_files": {
+        "description": "临时文件最大数量",
+        "type": "int",
+        "hint": "临时文件最大数量，默认 5000",
+    },
+    "cleanup_interval_seconds": {
+        "description": "清理检查间隔(秒)",
+        "type": "int",
+        "hint": "资源清理检查间隔(秒)，默认 600 (10分钟)",
+    },
+}
+
+LIVE2D_I18N_RESOURCES = {
+    locale: {
+        field_key: {
+            key: value
+            for key, value in field_value.items()
+            if key in {"description", "hint", "labels", "name"}
+        }
+        for field_key, field_value in LIVE2D_CONFIG_METADATA.items()
+    }
+    for locale in ("zh-CN", "en-US")
+}
+
+
 @register_platform_adapter(
     "live2d",
     "Live2D 桌面应用适配器，支持 Live2D-Bridge Protocol v1.0",
@@ -90,6 +221,8 @@ from .message_event import Live2DMessageEvent
     },
     adapter_display_name="Live2D",
     support_streaming_message=True,
+    config_metadata=LIVE2D_CONFIG_METADATA,
+    i18n_resources=LIVE2D_I18N_RESOURCES,
 )
 class Live2DPlatformAdapter(Platform):
     """Live2D 平台适配器"""
