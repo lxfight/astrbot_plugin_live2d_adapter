@@ -55,6 +55,14 @@ class MessageHandler:
         fallback = str(getattr(self.config, "resource_base_url", "") or "").strip()
         return fallback.rstrip("/")
 
+    @staticmethod
+    def _normalize_resource_path(path: str | None) -> str:
+        raw = str(path or "/resources").strip()
+        if not raw:
+            return "/resources"
+        normalized = "/" + raw.strip("/")
+        return normalized or "/resources"
+
     def _build_resource_config(
         self, client_id: str, connection_context: ConnectionContext | None = None
     ) -> dict[str, str]:
@@ -62,7 +70,9 @@ class MessageHandler:
             "resourceBaseUrl": self._resolve_request_origin(
                 client_id, connection_context
             ),
-            "resourcePath": getattr(self.config, "resource_path", "/resources"),
+            "resourcePath": self._normalize_resource_path(
+                getattr(self.config, "resource_path", None)
+            ),
         }
 
     async def handle_packet(

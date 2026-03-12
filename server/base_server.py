@@ -67,6 +67,17 @@ class BaseConnectionManager:
             except Exception as e:
                 logger.warning(f"on_client_disconnected callback failed: {e!s}")
 
+    async def shutdown_clients(self) -> None:
+        """关闭所有客户端连接并正确走 unregister 流程。"""
+        for client_id in list(self.clients):
+            ws = self.clients.get(client_id)
+            await self.unregister(client_id)
+            if ws:
+                try:
+                    await self._close_ws(ws, 1000, "服务器关闭")
+                except Exception:
+                    pass
+
     async def send_to(self, client_id: str, packet: BasePacket) -> None:
         websocket = self.clients.get(client_id)
         if not websocket:

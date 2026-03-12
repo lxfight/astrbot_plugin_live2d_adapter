@@ -823,9 +823,6 @@ kick_old: true
 
 # 功能配置
 enable_streaming: true
-
-# 功能配置
-enable_streaming: true
 single_port_mode: true
 public_origin: ""
 

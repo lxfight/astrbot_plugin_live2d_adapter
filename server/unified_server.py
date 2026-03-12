@@ -41,13 +41,9 @@ class SinglePortLive2DServer(BaseConnectionManager):
     async def _send_ws(self, websocket: Any, data: str) -> None:
         await websocket.send_str(data)
 
-    def _build_request_origin(self, request: web.Request) -> str:
-        configured_origin = (
-            str(getattr(self.config, "public_origin", "") or "").strip().rstrip("/")
-        )
-        if configured_origin:
-            return configured_origin
-
+    @staticmethod
+    def _extract_request_origin(request: web.Request) -> str:
+        """仅从 HTTP 请求头中推导 origin，不涉及 config 优先级。"""
         forwarded_proto = (
             request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip()
         )
@@ -61,7 +57,7 @@ class SinglePortLive2DServer(BaseConnectionManager):
         return f"{scheme}://{host}".rstrip("/")
 
     def _build_connection_context(self, request: web.Request) -> ConnectionContext:
-        return {"request_origin": self._build_request_origin(request)}
+        return {"request_origin": self._extract_request_origin(request)}
 
     async def _send_packet(
         self, websocket: web.WebSocketResponse, packet: BasePacket
@@ -175,13 +171,15 @@ class SinglePortLive2DServer(BaseConnectionManager):
 
         return websocket
 
-    @staticmethod
-    def _http_to_ws(origin: str) -> str:
+    _SCHEME_MAP = {"http": "ws", "https": "wss"}
+
+    @classmethod
+    def _http_to_ws(cls, origin: str) -> str:
         """将 HTTP(S) 协议转换为对应的 WS(S) 协议。"""
-        if origin.startswith("https://"):
-            return "wss://" + origin[8:]
-        if origin.startswith("http://"):
-            return "ws://" + origin[7:]
+        for http_scheme, ws_scheme in cls._SCHEME_MAP.items():
+            prefix = f"{http_scheme}://"
+            if origin.startswith(prefix):
+                return f"{ws_scheme}://{origin[len(prefix):]}"
         return origin
 
     def _build_local_origin(self) -> str:
@@ -233,13 +231,7 @@ class SinglePortLive2DServer(BaseConnectionManager):
             )
 
     async def stop(self) -> None:
-        if self.clients:
-            for websocket in list(self.clients.values()):
-                try:
-                    await websocket.close(code=1000)
-                except Exception:
-                    pass
-            self.clients.clear()
+        await self.shutdown_clients()
 
         if self.site:
             await self.site.stop()
