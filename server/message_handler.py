@@ -3,6 +3,7 @@
 import hmac
 import time
 from collections.abc import Callable
+from typing import TypedDict
 
 from astrbot.api import logger
 
@@ -16,6 +17,10 @@ from ..core.protocol import (
 from ..core.protocol import (
     Protocol as ProtocolClass,
 )
+
+
+class ConnectionContext(TypedDict, total=False):
+    request_origin: str
 
 
 class MessageHandler:
@@ -32,8 +37,39 @@ class MessageHandler:
         self.on_tools_declared: Callable | None = None
         self.client_states: dict[str, dict] = {}
 
+    def _resolve_request_origin(
+        self, client_id: str, connection_context: ConnectionContext | None = None
+    ) -> str:
+        configured_origin = str(getattr(self.config, "public_origin", "") or "").strip()
+        if configured_origin:
+            return configured_origin.rstrip("/")
+
+        if connection_context and connection_context.get("request_origin"):
+            return str(connection_context["request_origin"]).strip().rstrip("/")
+
+        saved_context = self.client_states.get(client_id, {}).get("connection") or {}
+        request_origin = str(saved_context.get("request_origin", "") or "").strip()
+        if request_origin:
+            return request_origin.rstrip("/")
+
+        fallback = str(getattr(self.config, "resource_base_url", "") or "").strip()
+        return fallback.rstrip("/")
+
+    def _build_resource_config(
+        self, client_id: str, connection_context: ConnectionContext | None = None
+    ) -> dict[str, str]:
+        return {
+            "resourceBaseUrl": self._resolve_request_origin(
+                client_id, connection_context
+            ),
+            "resourcePath": getattr(self.config, "resource_path", "/resources"),
+        }
+
     async def handle_packet(
-        self, packet: BasePacket, client_id: str
+        self,
+        packet: BasePacket,
+        client_id: str,
+        connection_context: ConnectionContext | None = None,
     ) -> BasePacket | None:
         """
         处理接收到的数据包
@@ -47,7 +83,7 @@ class MessageHandler:
         """
 
         if packet.op == ProtocolClass.OP_HANDSHAKE:
-            return await self.handle_handshake(packet, client_id)
+            return await self.handle_handshake(packet, client_id, connection_context)
 
         elif packet.op == ProtocolClass.OP_PING:
             return await self.handle_ping(packet)
@@ -62,13 +98,13 @@ class MessageHandler:
             return await self.handle_shortcut_input(packet, client_id)
 
         elif packet.op == ProtocolClass.OP_RESOURCE_PREPARE:
-            return await self.handle_resource_prepare(packet)
+            return await self.handle_resource_prepare(packet, client_id)
 
         elif packet.op == ProtocolClass.OP_RESOURCE_COMMIT:
             return await self.handle_resource_commit(packet)
 
         elif packet.op == ProtocolClass.OP_RESOURCE_GET:
-            return await self.handle_resource_get(packet)
+            return await self.handle_resource_get(packet, client_id)
 
         elif packet.op == ProtocolClass.OP_RESOURCE_RELEASE:
             return await self.handle_resource_release(packet)
@@ -101,7 +137,9 @@ class MessageHandler:
         elif packet.op == ProtocolClass.OP_ERROR:
             # 错误响应可能是桌面请求的回复，尝试路由
             if self.on_desktop_response:
-                handled = self.on_desktop_response(packet.id, packet.payload, packet.error)
+                handled = self.on_desktop_response(
+                    packet.id, packet.payload, packet.error
+                )
                 if handled:
                     return None
             logger.warning(f"收到错误响应: {packet.error}")
@@ -111,7 +149,12 @@ class MessageHandler:
             logger.warning(f"未知的操作码: {packet.op}")
             return None
 
-    async def handle_handshake(self, packet: BasePacket, client_id: str) -> BasePacket:
+    async def handle_handshake(
+        self,
+        packet: BasePacket,
+        client_id: str,
+        connection_context: ConnectionContext | None = None,
+    ) -> BasePacket:
         """处理握手请求"""
         payload = packet.payload or {}
 
@@ -153,7 +196,11 @@ class MessageHandler:
         # 类似私聊场景，同一个客户端永远是同一个 session_id
         session_id = client_id
         user_id = client_id
-        self.client_states.setdefault(client_id, {})["session"] = {
+        client_state = self.client_states.setdefault(client_id, {})
+        if connection_context:
+            client_state["connection"] = dict(connection_context)
+
+        client_state["session"] = {
             "session_id": session_id,
             "user_id": user_id,
             "connect_time": time.time(),
@@ -192,6 +239,8 @@ class MessageHandler:
                     "resource.progress",
                 ]
             )
+        resource_config = self._build_resource_config(client_id, connection_context)
+
         return ProtocolClass.create_handshake_ack(
             request_id=packet.id,
             session_id=session_id,
@@ -204,7 +253,8 @@ class MessageHandler:
                 "maxInlineBytes": getattr(
                     self.config, "resource_max_inline_bytes", 262144
                 ),
-                "resourceBaseUrl": getattr(self.config, "resource_base_url", ""),
+                "resourceBaseUrl": resource_config["resourceBaseUrl"],
+                "resourcePath": resource_config["resourcePath"],
             },
         )
 
@@ -305,7 +355,9 @@ class MessageHandler:
 
         return None
 
-    async def handle_resource_prepare(self, packet: BasePacket) -> BasePacket:
+    async def handle_resource_prepare(
+        self, packet: BasePacket, client_id: str
+    ) -> BasePacket:
         """处理资源上传申请"""
         if not self.resource_manager:
             return ProtocolClass.create_error_packet(
@@ -324,6 +376,7 @@ class MessageHandler:
             return ProtocolClass.create_error_packet(
                 ProtocolClass.ERROR_FILE_UPLOAD_FAILED, str(e), packet.id
             )
+        resource_config = self._build_resource_config(client_id)
         headers = {}
         if getattr(self.resource_manager, "token", None):
             headers["Authorization"] = f"Bearer {self.resource_manager.token}"
@@ -333,10 +386,18 @@ class MessageHandler:
                 "rid": entry.rid,
                 "upload": {
                     "method": "PUT",
-                    "url": self.resource_manager.build_upload_url(entry.rid),
+                    "url": self.resource_manager.build_upload_url(
+                        entry.rid,
+                        base_url=resource_config["resourceBaseUrl"],
+                        resource_path=resource_config["resourcePath"],
+                    ),
                     "headers": headers or None,
                 },
-                "resource": self.resource_manager.get_resource_payload(entry.rid),
+                "resource": self.resource_manager.get_resource_payload(
+                    entry.rid,
+                    base_url=resource_config["resourceBaseUrl"],
+                    resource_path=resource_config["resourcePath"],
+                ),
             },
             packet_id=packet.id,
         )
@@ -361,7 +422,9 @@ class MessageHandler:
             packet_id=packet.id,
         )
 
-    async def handle_resource_get(self, packet: BasePacket) -> BasePacket:
+    async def handle_resource_get(
+        self, packet: BasePacket, client_id: str
+    ) -> BasePacket:
         """处理资源获取请求"""
         if not self.resource_manager:
             return ProtocolClass.create_error_packet(
@@ -369,7 +432,12 @@ class MessageHandler:
             )
         payload = packet.payload or {}
         rid = payload.get("rid")
-        resource_payload = self.resource_manager.get_resource_payload(rid)
+        resource_config = self._build_resource_config(client_id)
+        resource_payload = self.resource_manager.get_resource_payload(
+            rid,
+            base_url=resource_config["resourceBaseUrl"],
+            resource_path=resource_config["resourcePath"],
+        )
         if not resource_payload:
             return ProtocolClass.create_error_packet(
                 ProtocolClass.ERROR_RESOURCE_NOT_FOUND, "资源不存在", packet.id

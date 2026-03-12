@@ -48,9 +48,9 @@ from ..core.protocol import BasePacket
 from ..core.protocol import Protocol as ProtocolClass
 from ..server.resource_manager import ResourceManager
 from ..server.resource_server import ResourceServer
+from ..server.unified_server import SinglePortLive2DServer
 from ..server.websocket_server import WebSocketServer
 from .message_event import Live2DMessageEvent
-
 
 LIVE2D_CONFIG_METADATA = {
     "ws_host": {
@@ -88,6 +88,16 @@ LIVE2D_CONFIG_METADATA = {
         "type": "bool",
         "hint": "是否启用流式消息推送，默认 true",
     },
+    "single_port_mode": {
+        "description": "单端口模式",
+        "type": "bool",
+        "hint": "是否在同一端口复用 WebSocket 与资源接口，默认 true",
+    },
+    "public_origin": {
+        "description": "公网访问入口",
+        "type": "string",
+        "hint": "可选，留空时自动根据客户端连接地址推导资源入口，如 https://example.com:9090",
+    },
     "resource_enabled": {
         "description": "启用资源服务",
         "type": "bool",
@@ -96,12 +106,12 @@ LIVE2D_CONFIG_METADATA = {
     "resource_host": {
         "description": "资源服务监听地址",
         "type": "string",
-        "hint": "资源服务监听地址，默认 127.0.0.1（仅本机访问）",
+        "hint": "兼容旧双端口模式，单端口模式下默认复用 ws_host",
     },
     "resource_port": {
         "description": "资源服务端口",
         "type": "int",
-        "hint": "资源服务端口，默认 9091",
+        "hint": "兼容旧双端口模式，单端口模式下默认复用 ws_port",
     },
     "resource_path": {
         "description": "资源访问路径",
@@ -199,10 +209,12 @@ LIVE2D_I18N_RESOURCES = {
         "kick_old": True,  # 断开旧连接 | Kick old connections
         # 流式消息 | Streaming
         "enable_streaming": True,  # 启用流式推送 | Enable streaming
+        "single_port_mode": True,  # 单端口复用模式 | Single port mode
+        "public_origin": "",  # 可选公网入口 | Optional public origin
         # 资源服务器 | Resource Server
         "resource_enabled": True,  # 启用资源服务 | Enable resource server
-        "resource_host": "127.0.0.1",  # 资源服务监听地址(建议仅本机) | Resource listen address
-        "resource_port": 9091,  # 资源服务端口 | Resource port
+        "resource_host": "127.0.0.1",  # 兼容旧配置，单端口模式下默认复用 ws_host | Legacy resource host
+        "resource_port": 9091,  # 兼容旧配置，单端口模式下默认复用 ws_port | Legacy resource port
         "resource_path": "/resources",  # 资源访问路径 | Resource path
         "resource_dir": "live2d_resources",  # 资源存储目录 | Resource directory
         "resource_base_url": "",  # 资源基础URL(空=自动) | Base URL (empty=auto)
@@ -226,6 +238,7 @@ LIVE2D_I18N_RESOURCES = {
 )
 class Live2DPlatformAdapter(Platform):
     """Live2D 平台适配器"""
+
     MIN_AUTH_TOKEN_LENGTH = 16
 
     def __init__(
@@ -256,7 +269,7 @@ class Live2DPlatformAdapter(Platform):
         self._log_auth_token_status(auth_token, auth_source)
 
         # WebSocket 服务器实例
-        self.ws_server: WebSocketServer | None = None
+        self.ws_server: WebSocketServer | SinglePortLive2DServer | None = None
         self.resource_server: ResourceServer | None = None
 
         self._stop_event = asyncio.Event()
@@ -406,7 +419,9 @@ class Live2DPlatformAdapter(Platform):
                 self._base_dir = base_dir.resolve()
 
             def _resolve_managed_dir(self, key: str, default_name: str) -> str:
-                raw_value = str(self._data.get(key, default_name) or default_name).strip()
+                raw_value = str(
+                    self._data.get(key, default_name) or default_name
+                ).strip()
                 candidate = Path(raw_value)
                 if not candidate.is_absolute():
                     candidate = self._base_dir / candidate
@@ -444,15 +459,29 @@ class Live2DPlatformAdapter(Platform):
                 return self._data.get("kick_old", True)
 
             @property
+            def single_port_mode(self) -> bool:
+                return self._data.get("single_port_mode", True)
+
+            @property
+            def public_origin(self) -> str:
+                return (
+                    str(self._data.get("public_origin", "") or "").strip().rstrip("/")
+                )
+
+            @property
             def resource_enabled(self) -> bool:
                 return self._data.get("resource_enabled", True)
 
             @property
             def resource_host(self) -> str:
+                if self.single_port_mode:
+                    return self.server_host
                 return self._data.get("resource_host", self.server_host)
 
             @property
             def resource_port(self) -> int:
+                if self.single_port_mode:
+                    return self.server_port
                 return self._data.get("resource_port", 9091)
 
             @property
@@ -465,9 +494,11 @@ class Live2DPlatformAdapter(Platform):
 
             @property
             def resource_base_url(self) -> str:
-                base_url = self._data.get("resource_base_url", "")
+                base_url = str(self._data.get("resource_base_url", "") or "").strip()
                 if base_url:
-                    return base_url
+                    return base_url.rstrip("/")
+                if self.public_origin:
+                    return self.public_origin
                 host = self.resource_host
                 if host in {"0.0.0.0", "::"}:
                     host = "127.0.0.1"
@@ -475,6 +506,8 @@ class Live2DPlatformAdapter(Platform):
 
             @property
             def resource_token(self) -> str:
+                if self.single_port_mode:
+                    return self.auth_token
                 token = self._data.get("resource_token", "")
                 return token if token else self.auth_token
 
@@ -747,10 +780,7 @@ class Live2DPlatformAdapter(Platform):
 
             # 获取客户端模型信息
             client_model_info = None
-            if (
-                hasattr(self.ws_server, "handler")
-                and self.ws_server.handler
-            ):
+            if hasattr(self.ws_server, "handler") and self.ws_server.handler:
                 client_state = self.ws_server.handler.client_states.get(
                     target_client_id, {}
                 )
@@ -788,10 +818,15 @@ class Live2DPlatformAdapter(Platform):
             logger.info("[Live2D] 正在启动平台适配器...")
             self._stop_event.clear()
 
-            # 创建 WebSocket 服务器
-            self.ws_server = WebSocketServer(
-                self.config_obj, resource_manager=self.resource_manager
-            )
+            # 创建 Live2D 服务
+            if self.config_obj.single_port_mode:
+                self.ws_server = SinglePortLive2DServer(
+                    self.config_obj, resource_manager=self.resource_manager
+                )
+            else:
+                self.ws_server = WebSocketServer(
+                    self.config_obj, resource_manager=self.resource_manager
+                )
 
             async def on_client_connected(client_id: str) -> None:
                 self.current_client_id = client_id
@@ -822,8 +857,12 @@ class Live2DPlatformAdapter(Platform):
             # 启动 WebSocket 服务器
             await self.ws_server.start()
 
-            # 启动资源服务器
-            if self.resource_manager is not None:
+            # 启动资源服务器（旧双端口兼容模式）
+            self.resource_server = None
+            if (
+                self.resource_manager is not None
+                and not self.config_obj.single_port_mode
+            ):
                 self.resource_server = ResourceServer(
                     manager=self.resource_manager,
                     host=self.config_obj.resource_host,
@@ -840,6 +879,10 @@ class Live2DPlatformAdapter(Platform):
             logger.info(
                 f"[Live2D] WebSocket: ws://{self.config_obj.server_host}:{self.config_obj.server_port}{self.config_obj.ws_path}"
             )
+            if self.config_obj.single_port_mode and self.resource_manager is not None:
+                logger.info(
+                    f"[Live2D] 单端口资源路径: {self.config_obj.resource_path}（认证复用 auth_token）"
+                )
 
             # 保持运行
             await self._stop_event.wait()
@@ -881,12 +924,12 @@ class Live2DPlatformAdapter(Platform):
         ws_server.handler.on_message_received = on_message_received
 
         # 桌面感知响应路由
-        ws_server.handler.on_desktop_response = (
-            lambda pid, payload, error=None: self.desktop_request_mgr.resolve(pid, payload, error)
+        ws_server.handler.on_desktop_response = lambda pid, payload, error=None: (
+            self.desktop_request_mgr.resolve(pid, payload, error)
         )
 
-        ws_server.handler.on_tools_declared = (
-            lambda client_id, tools: self._register_desktop_tools(tools)
+        ws_server.handler.on_tools_declared = lambda client_id, tools: (
+            self._register_desktop_tools(tools)
         )
 
     def _unregister_desktop_tools(self):
@@ -959,12 +1002,17 @@ class Live2DPlatformAdapter(Platform):
                             f"进程：{window.get('processName', '未知')}"
                         )
                     return "未检测到活跃窗口"
-            return json.dumps(tool_result, ensure_ascii=False) if tool_result else "操作完成"
+            return (
+                json.dumps(tool_result, ensure_ascii=False)
+                if tool_result
+                else "操作完成"
+            )
 
         return handler
 
-
-    async def _extract_tool_image_payload(self, image_data: str) -> tuple[str | None, str | None]:
+    async def _extract_tool_image_payload(
+        self, image_data: str
+    ) -> tuple[str | None, str | None]:
         """Convert screenshot payload into (mime_type, base64_data)."""
         if not image_data:
             return None, None
@@ -983,7 +1031,9 @@ class Live2DPlatformAdapter(Platform):
             try:
                 base64.b64decode(base64_data, validate=True)
             except Exception:
-                logger.warning("[Live2D] Invalid screenshot data URI; cannot return tool image")
+                logger.warning(
+                    "[Live2D] Invalid screenshot data URI; cannot return tool image"
+                )
                 return None, None
             return mime_type, base64_data
 
@@ -1036,8 +1086,12 @@ class Live2DPlatformAdapter(Platform):
 
     async def _handle_screenshot_result(self, event, tool_result: dict):
         """Prefer returning image blocks so tool-call models can really see screenshots."""
-        image_data = tool_result.get("image", "") if isinstance(tool_result, dict) else ""
-        window_info = tool_result.get("window", {}) if isinstance(tool_result, dict) else {}
+        image_data = (
+            tool_result.get("image", "") if isinstance(tool_result, dict) else ""
+        )
+        window_info = (
+            tool_result.get("window", {}) if isinstance(tool_result, dict) else {}
+        )
         title = window_info.get("title", "unknown")
 
         mime_type, base64_data = await self._extract_tool_image_payload(image_data)
