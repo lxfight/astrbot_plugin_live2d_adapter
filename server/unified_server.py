@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 from aiohttp import WSMsgType, web
@@ -13,97 +12,34 @@ from astrbot.api import logger
 from ..core.config import ConfigLike
 from ..core.protocol import BasePacket
 from ..core.protocol import Protocol as ProtocolClass
-from .message_handler import ConnectionContext, MessageHandler
+from .base_server import BaseConnectionManager
+from .message_handler import ConnectionContext
 from .resource_server import ResourceServer
 
 
-class SinglePortLive2DServer:
+class SinglePortLive2DServer(BaseConnectionManager):
     """在同一端口上同时提供 WebSocket 与资源路由。"""
 
     def __init__(self, config: ConfigLike, resource_manager: Any | None = None):
-        self.config = config
-        self.handler = MessageHandler(config, resource_manager=resource_manager)
-        self.clients: dict[str, web.WebSocketResponse] = {}
-        self.on_client_connected: Callable[[str], Awaitable[None]] | None = None
-        self.on_client_disconnected: Callable[[str], Awaitable[None]] | None = None
+        super().__init__(config, resource_manager=resource_manager)
         self.app: web.Application | None = None
         self.runner: web.AppRunner | None = None
         self.site: web.TCPSite | None = None
-        self.server: web.TCPSite | None = None
-        self.resource_server = None
+        self.resource_server: ResourceServer | None = None
         if resource_manager is not None:
             self.resource_server = ResourceServer(
                 manager=resource_manager,
                 host=config.server_host,
                 port=config.server_port,
                 resource_path=config.resource_path,
-                token=config.auth_token,
+                token=config.resource_token,
             )
 
-    async def register(self, websocket: web.WebSocketResponse, client_id: str) -> bool:
-        if len(self.clients) >= self.config.max_connections:
-            if self.config.kick_old and self.clients:
-                old_id, old_ws = next(iter(self.clients.items()))
-                logger.info(f"连接数已满，踢掉旧连接: {old_id}")
-                await old_ws.close(code=1000)
-                self.clients.pop(old_id, None)
-            else:
-                logger.warning("连接数已达上限，拒绝新连接")
-                await websocket.close(code=1008)
-                return False
+    async def _close_ws(self, websocket: Any, code: int, reason: str = "") -> None:
+        await websocket.close(code=code, message=reason.encode() if reason else b"")
 
-        self.clients[client_id] = websocket
-        logger.info(f"客户端已连接: {client_id} (总数: {len(self.clients)})")
-
-        if self.on_client_connected:
-            try:
-                await self.on_client_connected(client_id)
-            except Exception as error:
-                logger.warning(f"on_client_connected callback failed: {error!s}")
-        return True
-
-    async def unregister(self, client_id: str) -> None:
-        websocket = self.clients.pop(client_id, None)
-        if websocket is None:
-            return
-
-        logger.info(f"客户端已断开: {client_id} (总数: {len(self.clients)})")
-        if self.on_client_disconnected:
-            try:
-                await self.on_client_disconnected(client_id)
-            except Exception as error:
-                logger.warning(f"on_client_disconnected callback failed: {error!s}")
-
-    async def send_to(self, client_id: str, packet: BasePacket) -> None:
-        websocket = self.clients.get(client_id)
-        if not websocket:
-            logger.debug(f"Client {client_id} is not connected.")
-            return
-
-        try:
-            await websocket.send_str(packet.to_json())
-            logger.debug(f"发送消息到客户端 {client_id}: op={packet.op}")
-        except Exception as error:
-            logger.error(f"发送消息到客户端 {client_id} 失败: {error}")
-            await self.unregister(client_id)
-
-    async def broadcast(self, packet: BasePacket) -> None:
-        if not self.clients:
-            logger.debug("没有已连接的客户端")
-            return
-
-        message = packet.to_json()
-        disconnected: list[str] = []
-        for client_id, websocket in self.clients.items():
-            try:
-                await websocket.send_str(message)
-                logger.debug(f"发送消息到客户端 {client_id}: op={packet.op}")
-            except Exception as error:
-                logger.error(f"发送消息到客户端 {client_id} 失败: {error}")
-                disconnected.append(client_id)
-
-        for client_id in disconnected:
-            await self.unregister(client_id)
+    async def _send_ws(self, websocket: Any, data: str) -> None:
+        await websocket.send_str(data)
 
     def _build_request_origin(self, request: web.Request) -> str:
         configured_origin = (
@@ -239,6 +175,15 @@ class SinglePortLive2DServer:
 
         return websocket
 
+    @staticmethod
+    def _http_to_ws(origin: str) -> str:
+        """将 HTTP(S) 协议转换为对应的 WS(S) 协议。"""
+        if origin.startswith("https://"):
+            return "wss://" + origin[8:]
+        if origin.startswith("http://"):
+            return "ws://" + origin[7:]
+        return origin
+
     def _build_local_origin(self) -> str:
         host = self.config.server_host
         if host in {"0.0.0.0", "::"}:
@@ -280,7 +225,7 @@ class SinglePortLive2DServer:
 
         local_origin = self._build_local_origin()
         logger.info(
-            f"[Live2D] 单端口服务已启动: ws={local_origin.replace('http://', 'ws://', 1)}{self.config.ws_path}"
+            f"[Live2D] 单端口服务已启动: ws={self._http_to_ws(local_origin)}{self.config.ws_path}"
         )
         if self.resource_server is not None:
             logger.info(
