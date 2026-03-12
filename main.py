@@ -62,7 +62,9 @@ class Live2DAdapter(Star):
         """显示 Live2D 适配器状态"""
         adapter = self._get_adapter()
         if not adapter:
-            return MessageEventResult().message("[Live2D Adapter] 错误: 适配器未启动或未找到")
+            return MessageEventResult().message(
+                "[Live2D Adapter] 错误: 适配器未启动或未找到"
+            )
         return await self._cmd_status(adapter)
 
     @live2d_cmd.command("info")
@@ -71,7 +73,9 @@ class Live2DAdapter(Star):
         """显示当前客户端详细信息"""
         adapter = self._get_adapter()
         if not adapter:
-            return MessageEventResult().message("[Live2D Adapter] 错误: 适配器未启动或未找到")
+            return MessageEventResult().message(
+                "[Live2D Adapter] 错误: 适配器未启动或未找到"
+            )
         return await self._cmd_info(adapter)
 
     @live2d_cmd.command("list", alias={"clients"})
@@ -80,7 +84,9 @@ class Live2DAdapter(Star):
         """列出所有连接的客户端"""
         adapter = self._get_adapter()
         if not adapter:
-            return MessageEventResult().message("[Live2D Adapter] 错误: 适配器未启动或未找到")
+            return MessageEventResult().message(
+                "[Live2D Adapter] 错误: 适配器未启动或未找到"
+            )
         return await self._cmd_list(adapter)
 
     @live2d_cmd.command("resources", alias={"res"})
@@ -89,7 +95,9 @@ class Live2DAdapter(Star):
         """显示资源使用情况"""
         adapter = self._get_adapter()
         if not adapter:
-            return MessageEventResult().message("[Live2D Adapter] 错误: 适配器未启动或未找到")
+            return MessageEventResult().message(
+                "[Live2D Adapter] 错误: 适配器未启动或未找到"
+            )
         return await self._cmd_resources(adapter)
 
     @live2d_cmd.command("cleanup")
@@ -99,7 +107,9 @@ class Live2DAdapter(Star):
         """手动触发资源清理（仅管理员）"""
         adapter = self._get_adapter()
         if not adapter:
-            return MessageEventResult().message("[Live2D Adapter] 错误: 适配器未启动或未找到")
+            return MessageEventResult().message(
+                "[Live2D Adapter] 错误: 适配器未启动或未找到"
+            )
         return await self._cmd_cleanup(adapter)
 
     @live2d_cmd.command("config", alias={"cfg"})
@@ -109,7 +119,9 @@ class Live2DAdapter(Star):
         """显示当前配置（仅管理员）"""
         adapter = self._get_adapter()
         if not adapter:
-            return MessageEventResult().message("[Live2D Adapter] 错误: 适配器未启动或未找到")
+            return MessageEventResult().message(
+                "[Live2D Adapter] 错误: 适配器未启动或未找到"
+            )
         return await self._cmd_config(adapter)
 
     async def _cmd_status(self, adapter: Live2DPlatformAdapter) -> MessageEventResult:
@@ -164,9 +176,15 @@ class Live2DAdapter(Star):
 
             resource_server_status = "未启用"
             resource_addr = ""
-            if adapter.resource_server:
+            if (
+                adapter.config_obj.resource_enabled
+                and adapter.config_obj.single_port_mode
+            ):
+                resource_server_status = "与 WebSocket 共用端口"
+                resource_addr = f"{adapter.config_obj.server_host}:{adapter.config_obj.server_port}{adapter.config_obj.resource_path}"
+            elif adapter.resource_server:
                 resource_server_status = "运行中"
-                resource_addr = f"{adapter.config_obj.resource_host}:{adapter.config_obj.resource_port}"
+                resource_addr = f"{adapter.config_obj.resource_host}:{adapter.config_obj.resource_port}{adapter.config_obj.resource_path}"
 
             streaming_status = (
                 "已启用"
@@ -191,13 +209,17 @@ class Live2DAdapter(Star):
 
         except Exception as e:
             logger.exception(f"获取状态失败: {e}")
-            return MessageEventResult().message(f"[Live2D Adapter] 错误: 获取状态失败 - {e}")
+            return MessageEventResult().message(
+                f"[Live2D Adapter] 错误: 获取状态失败 - {e}"
+            )
 
     async def _cmd_info(self, adapter: Live2DPlatformAdapter) -> MessageEventResult:
         """显示详细信息"""
         try:
             if not adapter.current_client_id:
-                return MessageEventResult().message("[Live2D Adapter] 当前没有连接的客户端")
+                return MessageEventResult().message(
+                    "[Live2D Adapter] 当前没有连接的客户端"
+                )
 
             client_id = adapter.current_client_id
             ws_server = adapter.ws_server
@@ -257,7 +279,9 @@ class Live2DAdapter(Star):
         try:
             ws_server = adapter.ws_server
             if not ws_server or not ws_server.clients:
-                return MessageEventResult().message("[Live2D Adapter] 当前没有连接的客户端")
+                return MessageEventResult().message(
+                    "[Live2D Adapter] 当前没有连接的客户端"
+                )
 
             client_list = []
             for client_id in ws_server.clients.keys():
@@ -282,7 +306,9 @@ class Live2DAdapter(Star):
                 f"[Live2D Adapter] 错误: 获取客户端列表失败 - {e}"
             )
 
-    async def _cmd_resources(self, adapter: Live2DPlatformAdapter) -> MessageEventResult:
+    async def _cmd_resources(
+        self, adapter: Live2DPlatformAdapter
+    ) -> MessageEventResult:
         """显示资源信息"""
         try:
             if not adapter.resource_manager:
@@ -292,7 +318,9 @@ class Live2DAdapter(Star):
             resources = rm.resources
 
             if not resources:
-                return MessageEventResult().message("[Live2D Adapter] 当前没有存储的资源")
+                return MessageEventResult().message(
+                    "[Live2D Adapter] 当前没有存储的资源"
+                )
 
             # 按类型统计
             type_stats = {}
@@ -361,7 +389,9 @@ class Live2DAdapter(Star):
 
         except Exception as e:
             logger.exception(f"清理失败: {e}")
-            return MessageEventResult().message(f"[Live2D Adapter] 错误: 清理失败 - {e}")
+            return MessageEventResult().message(
+                f"[Live2D Adapter] 错误: 清理失败 - {e}"
+            )
 
     async def _cmd_config(self, adapter: Live2DPlatformAdapter) -> MessageEventResult:
         """显示当前配置"""
@@ -385,7 +415,9 @@ WebSocket:
 功能:
   - 流式消息: {"已启用" if getattr(config, "enable_streaming", False) else "未启用"}
   - 语音输出: 跟随 AstrBot 的 TTS/音频消息
+  - 单端口模式: {"已启用" if getattr(config, "single_port_mode", True) else "未启用"}
   - 资源服务器: {"已启用" if config.resource_enabled else "未启用"}
+  - 公网入口: {getattr(config, "public_origin", "") or "自动推导"}
 
 资源管理:
   - 资源目录: {config.resource_dir}
@@ -402,7 +434,9 @@ WebSocket:
 
         except Exception as e:
             logger.exception(f"获取配置失败: {e}")
-            return MessageEventResult().message(f"[Live2D Adapter] 错误: 获取配置失败 - {e}")
+            return MessageEventResult().message(
+                f"[Live2D Adapter] 错误: 获取配置失败 - {e}"
+            )
 
 
 __all__ = ["Live2DAdapter", "Live2DPlatformAdapter"]

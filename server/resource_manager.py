@@ -76,11 +76,35 @@ class ResourceManager:
         encoded = base64.b64encode(data).decode("utf-8")
         return f"data:{mime};base64,{encoded}"
 
-    def _build_url(self, rid: str) -> str:
-        base = f"{self.base_url}{self.resource_path}/{rid}"
-        if self.token:
-            return f"{base}?token={quote(self.token)}"
+    @staticmethod
+    def _normalize_base_url(base_url: str) -> str:
+        return str(base_url or "").strip().rstrip("/")
+
+    @staticmethod
+    def _normalize_resource_path(resource_path: str) -> str:
+        normalized = str(resource_path or "/resources").strip()
+        return "/" + normalized.strip("/") if normalized else "/resources"
+
+    def build_url(
+        self,
+        rid: str,
+        *,
+        base_url: str | None = None,
+        resource_path: str | None = None,
+        token: str | None = None,
+    ) -> str:
+        resolved_base_url = self._normalize_base_url(base_url or self.base_url)
+        resolved_resource_path = self._normalize_resource_path(
+            resource_path or self.resource_path
+        )
+        resolved_token = self.token if token is None else (token or None)
+        base = f"{resolved_base_url}{resolved_resource_path}/{rid}"
+        if resolved_token:
+            return f"{base}?token={quote(resolved_token)}"
         return base
+
+    def _build_url(self, rid: str) -> str:
+        return self.build_url(rid)
 
     def cleanup(
         self, *, reserve_bytes: int = 0, reserve_files: int = 0
@@ -237,7 +261,15 @@ class ResourceManager:
         self.resources[rid] = entry
         return entry
 
-    def build_reference_from_file(self, file_path: str, kind: str) -> dict[str, Any]:
+    def build_reference_from_file(
+        self,
+        file_path: str,
+        kind: str,
+        *,
+        base_url: str | None = None,
+        resource_path: str | None = None,
+        token: str | None = None,
+    ) -> dict[str, Any]:
         path = Path(file_path)
         mime = self._guess_mime(file_path)
         size = path.stat().st_size
@@ -252,14 +284,26 @@ class ResourceManager:
         entry = self.register_file(file_path, kind, mime=mime)
         return {
             "rid": entry.rid,
-            "url": self._build_url(entry.rid),
+            "url": self.build_url(
+                entry.rid,
+                base_url=base_url,
+                resource_path=resource_path,
+                token=token,
+            ),
             "mime": entry.mime,
             "size": entry.size,
             "sha256": entry.sha256,
         }
 
     def build_reference_from_bytes(
-        self, data: bytes, kind: str, mime: str
+        self,
+        data: bytes,
+        kind: str,
+        mime: str,
+        *,
+        base_url: str | None = None,
+        resource_path: str | None = None,
+        token: str | None = None,
     ) -> dict[str, Any]:
         if len(data) <= self.max_inline_bytes:
             return {
@@ -286,7 +330,12 @@ class ResourceManager:
         self.resources[rid] = entry
         return {
             "rid": entry.rid,
-            "url": self._build_url(entry.rid),
+            "url": self.build_url(
+                entry.rid,
+                base_url=base_url,
+                resource_path=resource_path,
+                token=token,
+            ),
             "mime": entry.mime,
             "size": entry.size,
             "sha256": entry.sha256,
@@ -295,7 +344,14 @@ class ResourceManager:
     def get_resource(self, rid: str) -> ResourceEntry | None:
         return self.resources.get(rid)
 
-    def get_resource_payload(self, rid: str) -> dict[str, Any] | None:
+    def get_resource_payload(
+        self,
+        rid: str,
+        *,
+        base_url: str | None = None,
+        resource_path: str | None = None,
+        token: str | None = None,
+    ) -> dict[str, Any] | None:
         entry = self.get_resource(rid)
         if not entry:
             return None
@@ -307,7 +363,12 @@ class ResourceManager:
             "sha256": entry.sha256,
         }
         if entry.status == "ready":
-            payload["url"] = self._build_url(entry.rid)
+            payload["url"] = self.build_url(
+                entry.rid,
+                base_url=base_url,
+                resource_path=resource_path,
+                token=token,
+            )
         return payload
 
     def get_resource_path(self, rid: str) -> Path | None:
@@ -327,5 +388,17 @@ class ResourceManager:
                 return False
         return True
 
-    def build_upload_url(self, rid: str) -> str:
-        return self._build_url(rid)
+    def build_upload_url(
+        self,
+        rid: str,
+        *,
+        base_url: str | None = None,
+        resource_path: str | None = None,
+        token: str | None = None,
+    ) -> str:
+        return self.build_url(
+            rid,
+            base_url=base_url,
+            resource_path=resource_path,
+            token=token,
+        )

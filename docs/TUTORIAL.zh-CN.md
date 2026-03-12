@@ -32,13 +32,15 @@ ws_host: "127.0.0.1"
 ws_port: 9090
 ws_path: "/astrbot/live2d"
 auth_token: ""
+single_port_mode: true
+public_origin: ""
 
 resource_enabled: true
-resource_host: "127.0.0.1"
-resource_port: 9091
 resource_path: "/resources"
 resource_dir: "live2d_resources"
 temp_dir: "live2d_temp"
+resource_base_url: ""
+resource_token: ""
 ```
 
 ### 关于 `auth_token`
@@ -64,21 +66,22 @@ temp_dir: "live2d_temp"
 
 ### 3.1 修改监听地址
 
-将 `ws_host`、`resource_host` 改为公网可监听地址（常见为 `0.0.0.0`）：
+将 `ws_host` 改为公网可监听地址（常见为 `0.0.0.0`），并保持 `single_port_mode: true`：
 
 ```yaml
 ws_host: "0.0.0.0"
 ws_port: 9090
-resource_host: "0.0.0.0"
-resource_port: 9091
+single_port_mode: true
+public_origin: "http://<你的公网IP或域名>:9090"  # 如使用反向代理，也可填写 https://example.com
 ```
+
+`public_origin` 用于告诉桌面端应该从哪个公网入口访问 `/resources/{rid}`。如果你直接使用服务器 IP:端口 对外暴露，就填这个公网地址；如果走 Nginx/Caddy/宝塔反代，就填反代后的外部地址。
 
 ### 3.2 云厂商安全组放行（必须）
 
-至少放行 TCP 端口：
+默认只需要放行一个 TCP 端口：
 
-- `9090`（WebSocket）
-- `9091`（资源服务）
+- `9090`（WebSocket + 资源接口）
 
 强烈建议设置来源 IP 白名单，只允许你的桌面公网 IP。
 
@@ -89,7 +92,6 @@ resource_port: 9091
 ```bash
 # 仅允许固定来源 IP（推荐）
 sudo ufw allow from <YOUR_DESKTOP_PUBLIC_IP> to any port 9090 proto tcp
-sudo ufw allow from <YOUR_DESKTOP_PUBLIC_IP> to any port 9091 proto tcp
 
 # 查看规则
 sudo ufw status numbered
@@ -99,12 +101,11 @@ sudo ufw status numbered
 
 ```bash
 sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="<YOUR_DESKTOP_PUBLIC_IP>" port protocol="tcp" port="9090" accept'
-sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="<YOUR_DESKTOP_PUBLIC_IP>" port protocol="tcp" port="9091" accept'
 sudo firewall-cmd --reload
 sudo firewall-cmd --list-all
 ```
 
-> 请不要直接对全网开放 9090/9091，尤其不要在空口令/弱口令情况下运行。
+> 请不要直接对全网开放 9090，尤其不要在空口令/弱口令情况下运行。只有你主动关闭 `single_port_mode` 回退到旧双端口模式时，才需要额外放行 `resource_port`。
 
 ---
 
@@ -120,8 +121,8 @@ sudo firewall-cmd --list-all
 
 ### 进一步增强（推荐）
 
-- 在反向代理层启用 HTTPS/WSS（TLS 证书）。
-- 将 WebSocket 与资源服务放在内网，只通过网关暴露。
+- 在具备条件时于反向代理层启用 HTTPS/WSS（TLS 证书）。
+- 可将 WebSocket 与资源接口统一收敛到网关，仅暴露一个端口。
 - 配置基础监控告警（连接暴增、异常流量、磁盘占用异常）。
 
 ---
@@ -135,7 +136,8 @@ sudo firewall-cmd --list-all
    - `ws://<SERVER_IP>:9090/astrbot/live2d`
    - 或你的 `wss://` 代理地址
 3. 填写与服务端一致的认证令牌。
-4. 点击连接。
+4. 一般不需要填写「高级资源设置」；只有老版本适配器或特殊端口映射场景才需要额外覆盖资源地址。
+5. 点击连接。
 
 ---
 
@@ -171,14 +173,16 @@ sudo firewall-cmd --list-all
 
 ### 连接不上云服务器
 
-- 检查安全组是否放行 9090/9091。
+- 检查安全组是否放行 9090。
 - 检查 Linux 防火墙是否放行相同端口。
+- 如通过反向代理或公网域名访问，检查 `public_origin` 是否填写为桌面端真实可访问的外部地址。
 - 检查 `ws_path` 是否为 `/astrbot/live2d`。
 
 ### 图片/语音资源加载失败
 
-- 检查 9091 资源端口是否可达。
-- 检查 `resource_enabled` 与 `resource_base_url` 配置。
+- 检查桌面端是否能访问 `http(s)://<服务地址>/resources/{rid}`。
+- 检查 `resource_enabled`、`public_origin` 与 `resource_base_url` 配置。
+- 若仍使用旧双端口模式，再检查 `resource_port` 与桌面端高级资源设置。
 
 ---
 

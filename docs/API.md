@@ -77,7 +77,8 @@
       "supportedImageFormats": ["jpg", "png", "gif", "webp"],
       "supportedAudioFormats": ["mp3", "wav", "ogg"],
       "maxInlineBytes": 262144,
-      "resourceBaseUrl": "http://127.0.0.1:9091"
+      "resourceBaseUrl": "http://127.0.0.1:9090",
+      "resourcePath": "/resources"
     }
   }
 }
@@ -364,15 +365,17 @@
     "rid": "resource-uuid",
     "upload": {
       "method": "PUT",
-      "url": "http://server:9091/resources/upload/resource-uuid",
+      "url": "http://server:9090/resources/resource-uuid",
       "headers": {
         "Authorization": "Bearer token"
       }
     },
     "resource": {
-      "url": "http://server:9091/resources/resource-uuid",
       "rid": "resource-uuid",
-      "status": "pending"
+      "kind": "image",
+      "mime": "image/png",
+      "size": 1024000,
+      "sha256": "abc123..."
     }
   }
 }
@@ -645,7 +648,7 @@
 **响应字段说明**:
 - `image`: 截图数据，两种格式之一：
   - **内联 Base64**（≤ 512KB）: `data:image/jpeg;base64,...`
-  - **资源 URL**（> 512KB）: `http://server:9091/resources/{rid}`，客户端自动通过 `resource.prepare` → HTTP PUT 上传
+  - **资源 URL**（> 512KB）: `http://server:9090/resources/{rid}`，客户端自动通过 `resource.prepare` → HTTP PUT 上传
 - `width` / `height`: 实际截图尺寸
 - `window.title`: 截图来源窗口标题
 
@@ -692,7 +695,7 @@
 1. **URL 引用** (推荐用于大文件)
 ```json
 {
-  "url": "http://server:9091/resources/abc123"
+  "url": "http://server:9090/resources/abc123"
 }
 ```
 
@@ -820,14 +823,18 @@ kick_old: true
 
 # 功能配置
 enable_streaming: true
+single_port_mode: true
+public_origin: ""
 
-# 资源服务器
+# 资源服务（默认与 WebSocket 共用同一端口）
 resource_enabled: true
 resource_host: "127.0.0.1"
 resource_port: 9091
 resource_path: "/resources"
 resource_dir: "live2d_resources"
 temp_dir: "live2d_temp"
+resource_base_url: ""
+resource_token: ""
 resource_max_inline_bytes: 262144
 ```
 
