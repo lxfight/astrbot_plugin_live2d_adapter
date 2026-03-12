@@ -1,6 +1,7 @@
 """Live2D 消息事件 - 处理消息发送到 Live2D 客户端"""
 
 from collections.abc import AsyncGenerator
+from time import monotonic
 from typing import Any
 
 try:
@@ -54,6 +55,11 @@ class Live2DMessageEvent(AstrMessageEvent):
             resource_manager=self.resource_manager,
         )
 
+        # 同一事件内连续 send() 调用的追加窗口（秒）
+        # 第一次调用 interrupt=True，窗口内后续调用 interrupt=False（追加气泡）
+        self._FOLLOWUP_WINDOW = 5.0
+        self._last_send_time: float = 0.0
+
     def _empty_chain(self) -> MessageChain:
         return MessageChain()
 
@@ -81,10 +87,15 @@ class Live2DMessageEvent(AstrMessageEvent):
                 await super().send(self._empty_chain())
                 return
 
+            # 同一事件的第一次发送中断旧表演，窗口内的后续发送追加（不中断）
+            now = monotonic()
+            should_interrupt = (now - self._last_send_time) > self._FOLLOWUP_WINDOW
+            self._last_send_time = now
+
             # 创建 perform.show 数据包
             packet = ProtocolClass.create_perform_show(
                 sequence=sequence,
-                interrupt=True,  # 默认中断当前表演
+                interrupt=should_interrupt,
             )
 
             # 发送到客户端
