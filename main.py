@@ -4,17 +4,11 @@ import time
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageEventResult, filter
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star
 
 from .adapters.platform_adapter import Live2DPlatformAdapter
 
 
-@register(
-    "astrbot_plugin_live2d_adapter",
-    "lxfight",
-    "Live2D 桌面客户端平台适配器，支持 L2D-Bridge Protocol v1.0",
-    "1.2.1",
-)
 class Live2DAdapter(Star):
     """Live2D 平台适配器插件"""
 
@@ -62,8 +56,9 @@ class Live2DAdapter(Star):
     def live2d_cmd(self):
         """Live2D 适配器管理命令组"""
 
+        pass
+
     @live2d_cmd.command("status")
-    @filter.command("live2d.status", alias={"l2d.status"})
     async def cmd_status(self, event: AstrMessageEvent) -> MessageEventResult:
         """显示 Live2D 适配器状态"""
         adapter = self._get_adapter()
@@ -74,7 +69,6 @@ class Live2DAdapter(Star):
         return await self._cmd_status(adapter)
 
     @live2d_cmd.command("info")
-    @filter.command("live2d.info", alias={"l2d.info"})
     async def cmd_info(self, event: AstrMessageEvent) -> MessageEventResult:
         """显示当前客户端详细信息"""
         adapter = self._get_adapter()
@@ -85,7 +79,6 @@ class Live2DAdapter(Star):
         return await self._cmd_info(adapter)
 
     @live2d_cmd.command("list", alias={"clients"})
-    @filter.command("live2d.list", alias={"l2d.list", "l2d.clients"})
     async def cmd_list(self, event: AstrMessageEvent) -> MessageEventResult:
         """列出所有连接的客户端"""
         adapter = self._get_adapter()
@@ -96,7 +89,6 @@ class Live2DAdapter(Star):
         return await self._cmd_list(adapter)
 
     @live2d_cmd.command("resources", alias={"res"})
-    @filter.command("live2d.resources", alias={"l2d.resources", "l2d.res"})
     async def cmd_resources(self, event: AstrMessageEvent) -> MessageEventResult:
         """显示资源使用情况"""
         adapter = self._get_adapter()
@@ -106,9 +98,8 @@ class Live2DAdapter(Star):
             )
         return await self._cmd_resources(adapter)
 
-    @live2d_cmd.command("cleanup")
-    @filter.command("live2d.cleanup", alias={"l2d.cleanup"})
     @filter.permission_type(filter.PermissionType.ADMIN)
+    @live2d_cmd.command("cleanup")
     async def cmd_cleanup(self, event: AstrMessageEvent) -> MessageEventResult:
         """手动触发资源清理（仅管理员）"""
         adapter = self._get_adapter()
@@ -118,9 +109,8 @@ class Live2DAdapter(Star):
             )
         return await self._cmd_cleanup(adapter)
 
-    @live2d_cmd.command("config", alias={"cfg"})
-    @filter.command("live2d.config", alias={"l2d.config", "l2d.cfg"})
     @filter.permission_type(filter.PermissionType.ADMIN)
+    @live2d_cmd.command("config", alias={"cfg"})
     async def cmd_config(self, event: AstrMessageEvent) -> MessageEventResult:
         """显示当前配置（仅管理员）"""
         adapter = self._get_adapter()
