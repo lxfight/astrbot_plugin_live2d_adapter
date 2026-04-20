@@ -4,53 +4,24 @@ from __future__ import annotations
 
 import os
 from typing import TYPE_CHECKING, Any
-
-try:
-    from astrbot.api import logger
-except ImportError:
-    logger = None
-
-if TYPE_CHECKING:
-    from astrbot.api.event import MessageChain as MessageChainType
-else:
-    MessageChainType = Any
-
-try:
-    from astrbot.api.message_components import (
-        At,
-        AtAll,
-        Face,
-        File,
-        Forward,
-        Image,
-        Json,
-        Node,
-        Nodes,
-        Plain,
-        Poke,
-        Record,
-        Reply,
-        Video,
-        WechatEmoji,
-    )
-except ImportError:
-    (
-        At,
-        AtAll,
-        Face,
-        File,
-        Forward,
-        Image,
-        Json,
-        Node,
-        Nodes,
-        Plain,
-        Poke,
-        Record,
-        Reply,
-        Video,
-        WechatEmoji,
-    ) = (None,) * 15
+from astrbot.api import logger
+from astrbot.api.event import MessageChain as MessageChainType
+from astrbot.api.message_components import (
+    At,
+    AtAll,
+    Face,
+    File,
+    Forward,
+    Image,
+    Json,
+    Node,
+    Nodes,
+    Plain,
+    Poke,
+    Record,
+    Reply,
+    Video,
+)
 
 from ..core.protocol import (
     create_expression_element,
@@ -389,8 +360,11 @@ class OutputMessageConverter:
         )
         if not resource_ref:
             return None
+        record_text = getattr(record, "text", "")
+        if not isinstance(record_text, str):
+            record_text = ""
         return create_tts_element(
-            text="",
+            text=record_text,
             url=resource_ref.get("url"),
             rid=resource_ref.get("rid"),
             inline=resource_ref.get("inline"),
@@ -487,8 +461,6 @@ class OutputMessageConverter:
             return "[forward]"
         if Json and isinstance(component, Json):
             return "[json]"
-        if WechatEmoji and isinstance(component, WechatEmoji):
-            return "[emoji]"
         if hasattr(component, "type"):
             return f"[{component.type}]"
         return None

@@ -10,6 +10,9 @@ from asyncio import Queue
 from pathlib import Path
 from urllib.parse import urlparse
 
+import aiohttp
+from mcp.types import CallToolResult, ImageContent
+
 try:
     from astrbot.api import logger
     from astrbot.api.event import MessageChain
@@ -28,17 +31,6 @@ except ImportError as e:
     raise ImportError(
         f"无法导入 AstrBot 模块，请确保此适配器作为 AstrBot 插件运行: {e}"
     )
-
-try:
-    import aiohttp
-except ImportError:
-    aiohttp = None
-
-try:
-    from mcp.types import CallToolResult, ImageContent
-except ImportError:
-    CallToolResult = None
-    ImageContent = None
 
 from ..converters.input_converter import InputMessageConverter
 from ..converters.output_converter import OutputMessageConverter
@@ -1037,7 +1029,7 @@ class Live2DPlatformAdapter(Platform):
                 return None, None
             return mime_type, base64_data
 
-        if image_data.startswith(("http://", "https://")) and aiohttp:
+        if image_data.startswith(("http://", "https://")):
             try:
                 timeout = aiohttp.ClientTimeout(total=10)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -1095,7 +1087,7 @@ class Live2DPlatformAdapter(Platform):
         title = window_info.get("title", "unknown")
 
         mime_type, base64_data = await self._extract_tool_image_payload(image_data)
-        if base64_data and CallToolResult and ImageContent:
+        if base64_data:
             return CallToolResult(
                 content=[
                     ImageContent(
