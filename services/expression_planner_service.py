@@ -130,5 +130,8 @@ class ExpressionPlannerService:
                 f"sequence={summarize_perform_sequence(sequence)}"
             )
         elif logger:
-            logger.debug("[Live2DPlanner] 规划结果未映射到可执行序列，跳过补发表演")
+            logger.debug(
+                "[Live2DPlanner] 规划结果未映射到可执行序列，跳过补发表演: "
+                f"resolution={resolver.summarize_resolution_context(plan)}"
+            )
         return sequence

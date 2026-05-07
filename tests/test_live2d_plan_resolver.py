@@ -213,6 +213,93 @@ class Live2DPlanResolverTest(unittest.TestCase):
             ],
         )
 
+    def test_resolve_big_smile_intent_to_happy_expression(self) -> None:
+        resolver = Live2DPlanResolver(
+            {
+                "capabilities": {
+                    "expressionCombo": True,
+                    "semanticExpression": True,
+                },
+                "expressions": ["Smile", "Sad"],
+                "expressionCatalog": [
+                    {
+                        "id": "Smile",
+                        "aliases": ["Smile"],
+                        "tags": [],
+                        "supportsCombo": True,
+                    },
+                    {
+                        "id": "Sad",
+                        "aliases": ["Sad"],
+                        "tags": [],
+                        "supportsCombo": True,
+                    },
+                ],
+                "semanticPresets": {},
+            }
+        )
+
+        plan = Live2DPerformPlan(
+            motion_intent="happy",
+            emotion_tags=["cheerful", "warm", "playful"],
+            expression_intent="big smile",
+            intensity=0.72,
+            hold_ms=2200,
+            confidence=0.88,
+        )
+
+        sequence = resolver.resolve(plan, reset_policy="previous")
+
+        self.assertEqual(
+            sequence,
+            [
+                {
+                    "type": "expression",
+                    "fade": 300,
+                    "combo": [{"id": "Smile", "weight": 0.72}],
+                    "holdMs": 2200,
+                    "resetPolicy": "previous",
+                    "motionType": "happy",
+                }
+            ],
+        )
+
+    def test_summarize_resolution_context_reports_unmatched_inputs(self) -> None:
+        resolver = Live2DPlanResolver(
+            {
+                "capabilities": {
+                    "expressionCombo": True,
+                    "semanticExpression": True,
+                },
+                "expressions": ["Blink"],
+                "expressionCatalog": [
+                    {
+                        "id": "Blink",
+                        "aliases": ["blink"],
+                        "tags": [],
+                        "supportsCombo": True,
+                    }
+                ],
+                "semanticPresets": {},
+            }
+        )
+
+        plan = Live2DPerformPlan(
+            motion_intent="happy",
+            expression_intent="big smile",
+            emotion_tags=["cheerful"],
+            confidence=0.9,
+        )
+
+        self.assertEqual(resolver.resolve(plan), [])
+        summary = resolver.summarize_resolution_context(plan)
+
+        self.assertEqual(summary["tags"], ["happy"])
+        self.assertEqual(summary["resolvedExpressionIds"], [])
+        self.assertEqual(summary["expressions"], ["Blink"])
+        self.assertEqual(summary["semanticPresetKeys"], [])
+        self.assertEqual(summary["catalog"][0]["id"], "Blink")
+
 
 
 if __name__ == "__main__":

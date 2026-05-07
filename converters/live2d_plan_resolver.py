@@ -2,13 +2,44 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..core.live2d_plan_schema import Live2DPerformPlan
 from ..core.protocol import create_expression_element, create_motion_element
 
 TAG_ALIASES = {
-    "happy": {"happy", "joy", "cheerful", "smile", "开心", "高兴", "快乐", "笑"},
+    "happy": {
+        "happy",
+        "joy",
+        "cheer",
+        "cheery",
+        "cheerful",
+        "delight",
+        "delighted",
+        "smile",
+        "smiling",
+        "big smile",
+        "grin",
+        "grinning",
+        "laugh",
+        "laughing",
+        "warm",
+        "playful",
+        "friendly",
+        "sweet",
+        "开心",
+        "高兴",
+        "快乐",
+        "愉快",
+        "亲切",
+        "温暖",
+        "俏皮",
+        "微笑",
+        "大笑",
+        "笑容",
+        "笑",
+    },
     "sad": {"sad", "down", "cry", "难过", "伤心", "沮丧", "哭"},
     "angry": {"angry", "mad", "rage", "生气", "愤怒", "恼火"},
     "surprised": {"surprised", "surprise", "shock", "惊讶", "震惊"},
@@ -16,6 +47,17 @@ TAG_ALIASES = {
     "neutral": {"neutral", "calm", "default", "normal", "平静", "默认", "普通"},
     "speaking": {"speaking", "talk", "speak", "chat", "说话", "讲话"},
 }
+
+TOKEN_PATTERN = re.compile(r"[a-z0-9]+|[\u4e00-\u9fff]+", re.IGNORECASE)
+
+
+def _contains_alias(text: str, alias: str) -> bool:
+    if not text or not alias:
+        return False
+
+    if re.search(r"[a-z0-9]", alias, re.IGNORECASE):
+        return alias in TOKEN_PATTERN.findall(text)
+    return alias in text
 
 
 class Live2DPlanResolver:
@@ -32,6 +74,8 @@ class Live2DPlanResolver:
             return None
         for canonical, aliases in TAG_ALIASES.items():
             if normalized == canonical or normalized in aliases:
+                return canonical
+            if any(_contains_alias(normalized, alias) for alias in aliases):
                 return canonical
         return normalized
 
@@ -97,6 +141,15 @@ class Live2DPlanResolver:
                 return bool(entry.get("supportsCombo"))
         return False
 
+    def _has_expression_catalog_entry(self, expression_id: str) -> bool:
+        normalized = str(expression_id or "").strip()
+        if not normalized:
+            return False
+        return any(
+            str(entry.get("id", "") or "").strip() == normalized
+            for entry in self._get_expression_catalog()
+        )
+
     def _collect_tags(self, plan: Live2DPerformPlan) -> list[str]:
         tags: list[str] = []
         for item in [*plan.emotion_tags, plan.expression_intent, plan.motion_intent]:
@@ -129,7 +182,7 @@ class Live2DPlanResolver:
             aliases.add(normalized_intent)
         for alias in aliases:
             alias_lower = str(alias or "").strip().lower()
-            if alias_lower and alias_lower in candidate_lower:
+            if alias_lower and _contains_alias(candidate_lower, alias_lower):
                 return True
 
         return False
@@ -201,6 +254,28 @@ class Live2DPlanResolver:
                     return resolved
 
         return resolved
+
+    def summarize_resolution_context(self, plan: Live2DPerformPlan) -> dict[str, Any]:
+        catalog = self._get_expression_catalog()
+        return {
+            "tags": self._collect_tags(plan),
+            "resolvedExpressionIds": self._resolve_expression_ids(plan),
+            "supportsCombo": self._supports_combo(),
+            "supportsSemantic": self._supports_semantic(),
+            "expressions": self._get_expressions()[:16],
+            "semanticPresetKeys": sorted(self._get_semantic_presets().keys())[:16],
+            "catalog": [
+                {
+                    "id": str(entry.get("id", "") or "").strip(),
+                    "aliases": entry.get("aliases") if isinstance(entry.get("aliases"), list) else [],
+                    "tags": entry.get("tags") if isinstance(entry.get("tags"), list) else [],
+                    "supportsCombo": bool(entry.get("supportsCombo")),
+                }
+                for entry in catalog[:12]
+                if isinstance(entry, dict)
+            ],
+            "motionGroups": list(self._get_motion_groups().keys())[:16],
+        }
 
     def _resolve_motion(self, plan: Live2DPerformPlan) -> dict[str, Any] | None:
         motion_groups = self._get_motion_groups()
@@ -277,14 +352,20 @@ class Live2DPlanResolver:
 
         if self._supports_semantic():
             tags = self._collect_tags(plan)
+            catalog = self._get_expression_catalog()
+            supports_direct_semantic = not catalog or any(
+                not self._has_expression_catalog_entry(expression_id)
+                for expression_id in self._get_expressions()
+            )
             if tags:
                 semantic = [{"tag": tag, "weight": intensity} for tag in tags[:3]]
-                return create_expression_element(
-                    semantic=semantic,
-                    hold_ms=plan.hold_ms,
-                    reset_policy=reset_policy,
-                    motion_type=motion_intent,
-                )
+                if supports_direct_semantic:
+                    return create_expression_element(
+                        semantic=semantic,
+                        hold_ms=plan.hold_ms,
+                        reset_policy=reset_policy,
+                        motion_type=motion_intent,
+                    )
 
         return None
 
