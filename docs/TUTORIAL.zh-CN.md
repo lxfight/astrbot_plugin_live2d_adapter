@@ -58,6 +58,19 @@ resource_token: ""
 - 桌面端传入的 `file:///` 图片、语音、文件、视频，会先复制到 `temp_dir` 再进入 AstrBot 流程。
 - 适配器下发本地资源时，也会先复制到 `resource_dir`，再通过资源服务暴露；不会直接把原始 `file://` 路径返回给桌面端。
 
+### 关于独立表演规划 LLM
+
+- 独立表演规划不再放在 `live2d` 平台实例配置里，而是放在插件配置页。
+- 配置入口：AstrBot 插件页 -> `Live2D 适配器` -> `planner`
+- 推荐将 `mode` 设为 `provider`，再用 `provider_id` 选择一个单独的对话 Provider。
+
+### 关于协议升级兼容
+
+- 新版适配器会按客户端声明能力发送增强表情协议，包括 `expression.combo`、`expression.semantic`、`holdMs`、`resetPolicy` 与 `perform.show.interruptible`；未声明能力时会退化为基础单表情协议。
+- 桌面端若要启用这些增强字段，需要在 `state.model.capabilities` 中声明 `expressionCombo` / `semanticExpression`，并同步回传 `expressionCatalog`、`semanticPresets`。
+- 如果桌面端仍停留在只识别 `expression.id` 的旧协议，只会退化为基础单表情模式，补发表演能力会明显受限。
+- 协议字段细节见：`docs/API.md`
+
 ---
 
 ## 3. 云服务器部署（重点）
@@ -138,6 +151,8 @@ sudo firewall-cmd --list-all
 3. 填写与服务端一致的认证令牌。
 4. 一般不需要填写「高级资源设置」；只有老版本适配器或特殊端口映射场景才需要额外覆盖资源地址。
 5. 点击连接。
+
+连接后，若桌面端支持增强模型上报，建议检查它是否已经向服务端发送带有 `capabilities`、`expressionCatalog`、`semanticPresets`、`discovery` 的 `state.model` 数据；否则服务端无法正确启用组合表情和语义表情映射。
 
 ---
 
