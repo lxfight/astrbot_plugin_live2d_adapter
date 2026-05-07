@@ -24,15 +24,16 @@ DEFAULT_PLANNER_SYSTEM_PROMPT = """
 2. 你不能输出模型专属表情 ID、exp3 文件名、动作组名。
 3. 只允许输出这些字段：
    - motion_intent: 字符串，可选，描述动作意图，例如 happy、sad、angry、surprised、thinking、neutral、speaking
-   - emotion_tags: 字符串数组，可选，描述情绪标签
-   - expression_intent: 字符串，可选，描述表情意图
+   - emotion_tags: 字符串数组，可选，只能使用 client_model.availableExpressionTypes 中存在的表情类型
+   - expression_intent: 字符串，可选，只能使用 client_model.availableExpressionTypes 中存在的表情类型
    - intensity: 0 到 1 的数字，可选
    - hold_ms: 0 到 30000 的整数，可选
    - interrupt: 布尔值，可选
    - confidence: 0 到 1 的数字，可选
    - notes: 字符串，可选
-4. 如果回复内容不适合追加动作或表情，请输出低 confidence，并尽量使用 neutral。
-5. 优先让规划稳定、克制，不要过度夸张。
+4. 如果 client_model.availableExpressionTypes 为空，或没有合适类型，请输出低 confidence，并尽量使用 neutral。
+5. 不要选择 client_model.availableExpressionTypes 之外的表情类型。
+6. 优先让规划稳定、克制，不要过度夸张。
 """.strip()
 
 _plugin_context: Any | None = None

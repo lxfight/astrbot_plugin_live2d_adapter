@@ -13,6 +13,7 @@ except Exception:  # pragma: no cover
 
 from ..core.live2d_plan_schema import Live2DPerformPlan, parse_live2d_perform_plan
 from ..core.planner_runtime import get_plugin_context
+from ..core.expression_types import LIVE2D_EXPRESSION_TYPE_SET
 
 
 class PlannerLLMClient:
@@ -23,16 +24,21 @@ class PlannerLLMClient:
         client_model_info: dict[str, Any] | None,
     ) -> dict[str, Any]:
         model_info = client_model_info or {}
-        catalog = model_info.get("expressionCatalog") or []
-        if not isinstance(catalog, list):
-            catalog = []
+        presets = model_info.get("semanticPresets")
+        if not isinstance(presets, dict):
+            presets = {}
+        available_types = [
+            key
+            for key, value in presets.items()
+            if key in LIVE2D_EXPRESSION_TYPE_SET
+            and isinstance(value, list)
+            and any(str(item or "").strip() for item in value)
+        ]
         return {
             "name": model_info.get("name"),
             "capabilities": model_info.get("capabilities") or {},
             "motionGroups": list((model_info.get("motionGroups") or {}).keys())[:32],
-            "expressions": list(model_info.get("expressions") or [])[:64],
-            "semanticPresets": model_info.get("semanticPresets") or {},
-            "expressionCatalog": catalog[:64],
+            "availableExpressionTypes": available_types,
         }
 
     @staticmethod

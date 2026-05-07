@@ -72,6 +72,11 @@ class PlannerClientTest(unittest.IsolatedAsyncioTestCase):
                 "name": "测试模型",
                 "motionGroups": {"Happy": [{"index": 0, "file": "happy.motion3.json"}]},
                 "expressions": ["Smile"],
+                "semanticPresets": {"happy": ["Smile"], "sad": []},
+                "expressionCatalog": [
+                    {"id": "Smile", "tags": ["happy"], "supportsCombo": True},
+                    {"id": "Sad", "tags": ["sad"], "supportsCombo": True},
+                ],
             },
             planner_config=runtime_config,
         )
@@ -88,6 +93,10 @@ class PlannerClientTest(unittest.IsolatedAsyncioTestCase):
         prompt_payload = json.loads(provider.calls[0]["prompt"])
         self.assertEqual(prompt_payload["reply_text"], "今天很开心")
         self.assertEqual(prompt_payload["client_model"]["name"], "测试模型")
+        self.assertEqual(prompt_payload["client_model"]["availableExpressionTypes"], ["happy"])
+        self.assertNotIn("sad", prompt_payload["client_model"]["availableExpressionTypes"])
+        self.assertNotIn("semanticPresets", prompt_payload["client_model"])
+        self.assertNotIn("expressionCatalog", prompt_payload["client_model"])
 
 
 if __name__ == "__main__":

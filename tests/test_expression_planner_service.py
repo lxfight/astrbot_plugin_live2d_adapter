@@ -101,7 +101,7 @@ class ExpressionPlannerServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sequence[0]["type"], "motion")
         self.assertEqual(sequence[0]["group"], "Happy")
         self.assertEqual(sequence[1]["type"], "expression")
-        self.assertEqual(sequence[1]["combo"], [{"id": "Smile", "weight": 0.8}])
+        self.assertEqual(sequence[1]["semantic"], [{"tag": "happy", "weight": 0.8}])
         self.assertEqual(sequence[1]["holdMs"], 1200)
         self.assertEqual(sequence[1]["resetPolicy"], "previous")
 

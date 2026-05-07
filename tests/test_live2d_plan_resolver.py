@@ -73,7 +73,7 @@ class Live2DPlanResolverTest(unittest.TestCase):
                 {
                     "type": "expression",
                     "fade": 300,
-                    "combo": [{"id": "Smile", "weight": 0.8}],
+                    "semantic": [{"tag": "happy", "weight": 0.8}],
                     "holdMs": 1800,
                     "resetPolicy": "previous",
                     "motionType": "happy",
@@ -116,7 +116,7 @@ class Live2DPlanResolverTest(unittest.TestCase):
                 {
                     "type": "expression",
                     "fade": 300,
-                    "id": "Smile",
+                    "semantic": [{"tag": "happy", "weight": 0.7}],
                     "holdMs": 0,
                     "resetPolicy": "previous",
                 }
@@ -299,6 +299,49 @@ class Live2DPlanResolverTest(unittest.TestCase):
         self.assertEqual(summary["expressions"], ["Blink"])
         self.assertEqual(summary["semanticPresetKeys"], [])
         self.assertEqual(summary["catalog"][0]["id"], "Blink")
+
+    def test_resolve_uses_extended_fixed_expression_types(self) -> None:
+        resolver = Live2DPlanResolver(
+            {
+                "capabilities": {
+                    "expressionCombo": True,
+                    "semanticExpression": True,
+                },
+                "expressionCatalog": [
+                    {
+                        "id": "Blush",
+                        "aliases": ["Blush"],
+                        "tags": ["blush"],
+                        "supportsCombo": True,
+                    },
+                ],
+                "semanticPresets": {
+                    "blush": ["Blush"],
+                    "happy": [],
+                },
+            }
+        )
+
+        plan = Live2DPerformPlan(
+            emotion_tags=["脸红"],
+            intensity=0.65,
+            confidence=0.9,
+        )
+
+        sequence = resolver.resolve(plan, reset_policy="previous")
+
+        self.assertEqual(
+            sequence,
+            [
+                {
+                    "type": "expression",
+                    "fade": 300,
+                    "semantic": [{"tag": "blush", "weight": 0.65}],
+                    "holdMs": 0,
+                    "resetPolicy": "previous",
+                }
+            ],
+        )
 
 
 

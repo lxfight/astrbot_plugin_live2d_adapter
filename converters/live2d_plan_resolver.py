@@ -5,48 +5,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ..core.expression_types import LIVE2D_EXPRESSION_TYPE_SET, TAG_ALIASES
 from ..core.live2d_plan_schema import Live2DPerformPlan
 from ..core.protocol import create_expression_element, create_motion_element
-
-TAG_ALIASES = {
-    "happy": {
-        "happy",
-        "joy",
-        "cheer",
-        "cheery",
-        "cheerful",
-        "delight",
-        "delighted",
-        "smile",
-        "smiling",
-        "big smile",
-        "grin",
-        "grinning",
-        "laugh",
-        "laughing",
-        "warm",
-        "playful",
-        "friendly",
-        "sweet",
-        "开心",
-        "高兴",
-        "快乐",
-        "愉快",
-        "亲切",
-        "温暖",
-        "俏皮",
-        "微笑",
-        "大笑",
-        "笑容",
-        "笑",
-    },
-    "sad": {"sad", "down", "cry", "难过", "伤心", "沮丧", "哭"},
-    "angry": {"angry", "mad", "rage", "生气", "愤怒", "恼火"},
-    "surprised": {"surprised", "surprise", "shock", "惊讶", "震惊"},
-    "thinking": {"thinking", "think", "ponder", "思考", "沉思"},
-    "neutral": {"neutral", "calm", "default", "normal", "平静", "默认", "普通"},
-    "speaking": {"speaking", "talk", "speak", "chat", "说话", "讲话"},
-}
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+|[\u4e00-\u9fff]+", re.IGNORECASE)
 
@@ -326,8 +287,22 @@ class Live2DPlanResolver:
     def _resolve_expression(self, plan: Live2DPerformPlan, reset_policy: str) -> dict[str, Any] | None:
         intensity = max(0.25, min(plan.intensity or 0.7, 1.0))
         motion_intent = self._normalize_tag(plan.motion_intent)
-        expression_ids = self._resolve_expression_ids(plan)
+        tags = self._collect_tags(plan)
+        semantic_tags = [
+            tag
+            for tag in tags
+            if tag in LIVE2D_EXPRESSION_TYPE_SET
+            and tag in self._get_semantic_presets()
+        ]
+        if self._supports_semantic() and semantic_tags:
+            return create_expression_element(
+                semantic=[{"tag": tag, "weight": intensity} for tag in semantic_tags[:3]],
+                hold_ms=plan.hold_ms,
+                reset_policy=reset_policy,
+                motion_type=motion_intent,
+            )
 
+        expression_ids = self._resolve_expression_ids(plan)
         combo_candidates = [
             expression_id
             for expression_id in expression_ids
@@ -351,7 +326,6 @@ class Live2DPlanResolver:
             )
 
         if self._supports_semantic():
-            tags = self._collect_tags(plan)
             catalog = self._get_expression_catalog()
             supports_direct_semantic = not catalog or any(
                 not self._has_expression_catalog_entry(expression_id)

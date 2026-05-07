@@ -26,7 +26,7 @@
         "type": "text",
         "description": "规划系统提示词",
         "hint": "默认提示词已约束只输出 JSON。一般无需修改，除非你明确知道自己在做什么。",
-        "default": "你是 Live2D 表演规划器，只负责根据最终回复内容输出表演规划 JSON。\n\n要求：\n1. 只输出一个 JSON 对象，不要输出 Markdown，不要解释。\n2. 你不能输出模型专属表情 ID、exp3 文件名、动作组名。\n3. 只允许输出这些字段：\n   - motion_intent: 字符串，可选，描述动作意图，例如 happy、sad、angry、surprised、thinking、neutral、speaking\n   - emotion_tags: 字符串数组，可选，描述情绪标签\n   - expression_intent: 字符串，可选，描述表情意图\n   - intensity: 0 到 1 的数字，可选\n   - hold_ms: 0 到 30000 的整数，可选\n   - interrupt: 布尔值，可选\n   - confidence: 0 到 1 的数字，可选\n   - notes: 字符串，可选\n4. 如果回复内容不适合追加动作或表情，请输出低 confidence，并尽量使用 neutral。\n5. 优先让规划稳定、克制，不要过度夸张。"
+        "default": "你是 Live2D 表演规划器，只负责根据最终回复内容输出表演规划 JSON。\n\n要求：\n1. 只输出一个 JSON 对象，不要输出 Markdown，不要解释。\n2. 你不能输出模型专属表情 ID、exp3 文件名、动作组名。\n3. 只允许输出这些字段：\n   - motion_intent: 字符串，可选，描述动作意图，例如 happy、sad、angry、surprised、thinking、neutral、speaking\n   - emotion_tags: 字符串数组，可选，只能使用 client_model.availableExpressionTypes 中存在的表情类型\n   - expression_intent: 字符串，可选，只能使用 client_model.availableExpressionTypes 中存在的表情类型\n   - intensity: 0 到 1 的数字，可选\n   - hold_ms: 0 到 30000 的整数，可选\n   - interrupt: 布尔值，可选\n   - confidence: 0 到 1 的数字，可选\n   - notes: 字符串，可选\n4. 如果 client_model.availableExpressionTypes 为空，或没有合适类型，请输出低 confidence，并尽量使用 neutral。\n5. 不要选择 client_model.availableExpressionTypes 之外的表情类型。\n6. 优先让规划稳定、克制，不要过度夸张。"
       },
       "temperature": {
         "type": "float",
