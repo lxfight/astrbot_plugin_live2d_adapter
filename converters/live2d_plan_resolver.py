@@ -47,6 +47,21 @@ class Live2DPlanResolver:
         catalog = self.client_model_info.get("expressionCatalog")
         return catalog if isinstance(catalog, list) else []
 
+    def _get_expressions(self) -> list[str]:
+        expressions = self.client_model_info.get("expressions")
+        if not isinstance(expressions, list):
+            return []
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in expressions:
+            expression_id = str(item or "").strip()
+            key = expression_id.lower()
+            if expression_id and key not in seen:
+                seen.add(key)
+                normalized.append(expression_id)
+        return normalized
+
     def _get_semantic_presets(self) -> dict[str, list[str]]:
         presets = self.client_model_info.get("semanticPresets")
         if not isinstance(presets, dict):
@@ -90,6 +105,35 @@ class Live2DPlanResolver:
                 tags.append(normalized)
         return tags
 
+    def _expression_matches_intent(self, candidate: Any, intent: str) -> bool:
+        if not isinstance(candidate, str):
+            return False
+
+        candidate_text = candidate.strip()
+        intent_text = intent.strip()
+        if not candidate_text or not intent_text:
+            return False
+
+        candidate_lower = candidate_text.lower()
+        intent_lower = intent_text.lower()
+        if candidate_lower == intent_lower or intent_lower in candidate_lower:
+            return True
+
+        normalized_candidate = self._normalize_tag(candidate_text)
+        normalized_intent = self._normalize_tag(intent_text)
+        if normalized_candidate and normalized_intent and normalized_candidate == normalized_intent:
+            return True
+
+        aliases = set(TAG_ALIASES.get(normalized_intent or "", set()))
+        if normalized_intent:
+            aliases.add(normalized_intent)
+        for alias in aliases:
+            alias_lower = str(alias or "").strip().lower()
+            if alias_lower and alias_lower in candidate_lower:
+                return True
+
+        return False
+
     def _find_expression_by_intent(self, expression_intent: str | None) -> str | None:
         if not expression_intent:
             return None
@@ -103,16 +147,12 @@ class Live2DPlanResolver:
             aliases = entry.get("aliases") or []
             candidates = [entry_id, *aliases] if isinstance(aliases, list) else [entry_id]
             for candidate in candidates:
-                if isinstance(candidate, str) and candidate.strip().lower() == normalized:
+                if self._expression_matches_intent(candidate, normalized):
                     return entry_id
 
-        for entry in self._get_expression_catalog():
-            entry_id = str(entry.get("id", "") or "").strip()
-            aliases = entry.get("aliases") or []
-            candidates = [entry_id, *aliases] if isinstance(aliases, list) else [entry_id]
-            for candidate in candidates:
-                if isinstance(candidate, str) and normalized in candidate.strip().lower():
-                    return entry_id
+        for expression_id in self._get_expressions():
+            if self._expression_matches_intent(expression_id, normalized):
+                return expression_id
         return None
 
     def _resolve_expression_ids(self, plan: Live2DPerformPlan) -> list[str]:
@@ -151,6 +191,14 @@ class Live2DPlanResolver:
                     resolved.append(entry_id)
                     if len(resolved) >= 3:
                         return resolved
+
+        for tag in tags:
+            candidate_id = self._find_expression_by_intent(tag)
+            if candidate_id and candidate_id not in seen:
+                seen.add(candidate_id)
+                resolved.append(candidate_id)
+                if len(resolved) >= 3:
+                    return resolved
 
         return resolved
 

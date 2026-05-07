@@ -154,6 +154,65 @@ class Live2DPlanResolverTest(unittest.TestCase):
             ],
         )
 
+    def test_resolve_uses_legacy_expression_list_without_catalog(self) -> None:
+        resolver = Live2DPlanResolver(
+            {
+                "capabilities": {},
+                "expressions": ["Smile", "Sad"],
+            }
+        )
+
+        plan = Live2DPerformPlan(
+            expression_intent="smile",
+            emotion_tags=["伤心"],
+            intensity=0.7,
+            confidence=0.9,
+        )
+
+        sequence = resolver.resolve(plan, reset_policy="previous")
+
+        self.assertEqual(
+            sequence,
+            [
+                {
+                    "type": "expression",
+                    "fade": 300,
+                    "id": "Smile",
+                    "holdMs": 0,
+                    "resetPolicy": "previous",
+                }
+            ],
+        )
+
+    def test_resolve_uses_legacy_expression_list_from_emotion_tags(self) -> None:
+        resolver = Live2DPlanResolver(
+            {
+                "capabilities": {},
+                "expressions": ["Smile", "Sad"],
+            }
+        )
+
+        plan = Live2DPerformPlan(
+            emotion_tags=["伤心"],
+            intensity=0.7,
+            confidence=0.9,
+        )
+
+        sequence = resolver.resolve(plan, reset_policy="keep")
+
+        self.assertEqual(
+            sequence,
+            [
+                {
+                    "type": "expression",
+                    "fade": 300,
+                    "id": "Sad",
+                    "holdMs": 0,
+                    "resetPolicy": "keep",
+                }
+            ],
+        )
+
 
 
 if __name__ == "__main__":
