@@ -231,11 +231,15 @@ class Protocol:
         sequence: list[dict[str, Any]],
         interrupt: bool = True,
         packet_id: str | None = None,
+        interruptible: bool | None = None,
     ) -> BasePacket:
         """创建表演序列指令 (perform.show)"""
+        payload: dict[str, Any] = {"interrupt": interrupt, "sequence": sequence}
+        if interruptible is not None:
+            payload["interruptible"] = interruptible
         return Protocol.create_packet(
             Protocol.OP_PERFORM_SHOW,
-            payload={"interrupt": interrupt, "sequence": sequence},
+            payload=payload,
             packet_id=packet_id,
         )
 
@@ -390,9 +394,30 @@ def create_motion_element(
     }
 
 
-def create_expression_element(expression_id: str, fade: int = 300) -> dict[str, Any]:
+def create_expression_element(
+    expression_id: str | int | None = None,
+    fade: int = 300,
+    combo: list[dict[str, Any]] | None = None,
+    semantic: list[dict[str, Any]] | None = None,
+    hold_ms: int | None = None,
+    reset_policy: str | None = None,
+    motion_type: str | None = None,
+) -> dict[str, Any]:
     """创建表情元素"""
-    return {"type": "expression", "id": expression_id, "fade": fade}
+    element: dict[str, Any] = {"type": "expression", "fade": fade}
+    if expression_id is not None:
+        element["id"] = expression_id
+    if combo:
+        element["combo"] = combo
+    if semantic:
+        element["semantic"] = semantic
+    if hold_ms is not None:
+        element["holdMs"] = hold_ms
+    if reset_policy:
+        element["resetPolicy"] = reset_policy
+    if motion_type:
+        element["motionType"] = motion_type
+    return element
 
 
 def create_wait_element(duration: int) -> dict[str, Any]:

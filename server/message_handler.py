@@ -519,6 +519,10 @@ class MessageHandler:
         model_name = payload.get("name", "unknown")
         motion_groups = payload.get("motionGroups", {})
         expressions = payload.get("expressions", [])
+        capabilities = payload.get("capabilities", {}) or {}
+        expression_catalog = payload.get("expressionCatalog", []) or []
+        semantic_presets = payload.get("semanticPresets", {}) or {}
+        discovery = payload.get("discovery", {}) or {}
 
         # 计算总动作数和动作详情
         total_motions = 0
@@ -534,7 +538,11 @@ class MessageHandler:
             f"name={model_name}, "
             f"motion_groups={len(motion_groups)}, "
             f"total_motions={total_motions}, "
-            f"expressions={len(expressions)}"
+            f"expressions={len(expressions)}, "
+            f"combo={bool(capabilities.get('expressionCombo'))}, "
+            f"semantic={bool(capabilities.get('semanticExpression'))}, "
+            f"catalog={len(expression_catalog)}, "
+            f"presets={len(semantic_presets)}"
         )
         logger.debug(f"动作组详情: {', '.join(motion_details)}")
 
@@ -547,5 +555,19 @@ class MessageHandler:
                 logger.debug(f"  {group_name}: {motion_files}")
 
         logger.debug(f"表情列表: {expressions}")
+        logger.debug(f"表情能力: {capabilities}")
+        if isinstance(discovery, dict) and discovery:
+            logger.debug(
+                "模型发现摘要: mode=%s, sources=%s, companions=%s, declared_expr=%s, "
+                "declared_motion_groups=%s, scanned_expr=%s, scanned_motion=%s, warnings=%s",
+                discovery.get("mode"),
+                discovery.get("sources"),
+                discovery.get("companionFiles"),
+                discovery.get("standardDeclaredExpressions"),
+                discovery.get("standardDeclaredMotionGroups"),
+                discovery.get("scannedExpressionCount"),
+                discovery.get("scannedMotionCount"),
+                discovery.get("warnings"),
+            )
 
         return None

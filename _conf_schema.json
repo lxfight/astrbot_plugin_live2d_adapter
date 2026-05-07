@@ -1,0 +1,66 @@
+{
+  "planner": {
+    "description": "独立表演规划 LLM",
+    "type": "object",
+    "hint": "用于在主回复发出后，基于回复文本补发 Live2D 动作与表情。建议选择单独的对话 Provider，而不是复用主对话模型。",
+    "items": {
+      "mode": {
+        "type": "string",
+        "description": "规划模式",
+        "hint": "auto=优先使用下方 Provider，未配置时保持禁用；provider=仅使用下方 Provider；disabled=完全禁用。",
+        "options": [
+          "auto",
+          "provider",
+          "disabled"
+        ],
+        "default": "auto"
+      },
+      "provider_id": {
+        "type": "string",
+        "description": "独立规划 Provider",
+        "hint": "选择 AstrBot 已配置的对话 Provider。建议专门创建一个低成本、稳定输出 JSON 的 Provider 供表演规划使用。",
+        "_special": "select_provider",
+        "default": ""
+      },
+      "system_prompt": {
+        "type": "text",
+        "description": "规划系统提示词",
+        "hint": "默认提示词已约束只输出 JSON。一般无需修改，除非你明确知道自己在做什么。",
+        "default": "你是 Live2D 表演规划器，只负责根据最终回复内容输出表演规划 JSON。\n\n要求：\n1. 只输出一个 JSON 对象，不要输出 Markdown，不要解释。\n2. 你不能输出模型专属表情 ID、exp3 文件名、动作组名。\n3. 只允许输出这些字段：\n   - motion_intent: 字符串，可选，描述动作意图，例如 happy、sad、angry、surprised、thinking、neutral、speaking\n   - emotion_tags: 字符串数组，可选，描述情绪标签\n   - expression_intent: 字符串，可选，描述表情意图\n   - intensity: 0 到 1 的数字，可选\n   - hold_ms: 0 到 30000 的整数，可选\n   - interrupt: 布尔值，可选\n   - confidence: 0 到 1 的数字，可选\n   - notes: 字符串，可选\n4. 如果回复内容不适合追加动作或表情，请输出低 confidence，并尽量使用 neutral。\n5. 优先让规划稳定、克制，不要过度夸张。"
+      },
+      "temperature": {
+        "type": "float",
+        "description": "规划温度",
+        "hint": "建议保持较低值，优先稳定输出。",
+        "default": 0.2,
+        "slider": {
+          "min": 0,
+          "max": 2,
+          "step": 0.1
+        }
+      },
+      "timeout_seconds": {
+        "type": "int",
+        "description": "规划超时(秒)",
+        "hint": "超过该时间仍未得到规划结果，则放弃补发表演。",
+        "default": 20,
+        "slider": {
+          "min": 5,
+          "max": 300,
+          "step": 1
+        }
+      },
+      "min_confidence": {
+        "type": "float",
+        "description": "最小置信度",
+        "hint": "低于该阈值时，放弃补发表演。",
+        "default": 0.45,
+        "slider": {
+          "min": 0,
+          "max": 1,
+          "step": 0.05
+        }
+      }
+    }
+  }
+}

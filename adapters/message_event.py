@@ -16,6 +16,7 @@ except ImportError as e:
 from ..converters.output_converter import OutputMessageConverter
 from ..core.protocol import BasePacket
 from ..core.protocol import Protocol as ProtocolClass
+from ..services.expression_planner_service import ExpressionPlannerService
 
 
 class Live2DMessageEvent(AstrMessageEvent):
@@ -54,6 +55,7 @@ class Live2DMessageEvent(AstrMessageEvent):
         self.output_converter = OutputMessageConverter(
             resource_manager=self.resource_manager,
         )
+        self.expression_planner = ExpressionPlannerService()
 
         # 同一事件内连续 send() 调用的追加窗口（秒）
         # 第一次调用 interrupt=True，窗口内后续调用 interrupt=False（追加气泡）
@@ -62,6 +64,53 @@ class Live2DMessageEvent(AstrMessageEvent):
 
     def _empty_chain(self) -> MessageChain:
         return MessageChain()
+
+    def _get_client_model_info(self) -> dict[str, Any]:
+        handler = getattr(self.websocket_server, "handler", None)
+        if not handler:
+            return {}
+        client_state = getattr(handler, "client_states", {}).get(self.client_id, {})
+        model_info = client_state.get("model")
+        return model_info if isinstance(model_info, dict) else {}
+
+    def _extract_reply_text(self, message: MessageChain | None) -> str:
+        return self.output_converter.extract_text_summary(message)
+
+    @staticmethod
+    def _has_explicit_perform_controls(sequence: list[dict[str, Any]]) -> bool:
+        return any(
+            isinstance(element, dict) and element.get("type") in {"motion", "expression"}
+            for element in sequence
+        )
+
+    async def _send_planner_followup(
+        self, reply_text: str, reset_policy: str
+    ) -> None:
+        normalized_reply = str(reply_text or "").strip()
+        if not normalized_reply or not self.expression_planner.is_enabled():
+            return
+
+        client_model_info = self._get_client_model_info()
+        if not client_model_info:
+            return
+
+        followup_sequence = await self.expression_planner.build_followup_sequence(
+            normalized_reply,
+            client_model_info,
+            reset_policy=reset_policy,
+        )
+        if not followup_sequence:
+            return
+
+        packet = ProtocolClass.create_perform_show(
+            sequence=followup_sequence,
+            interrupt=False,
+            interruptible=True,
+        )
+        await self._send_to_client(packet)
+        logger.info(
+            f"[Live2DPlanner] 已向客户端 {self.client_id} 补发表演序列，元素数: {len(followup_sequence)}"
+        )
 
     async def send(self, message: MessageChain | None) -> None:
         """
@@ -76,8 +125,11 @@ class Live2DMessageEvent(AstrMessageEvent):
             return
 
         try:
+            self.output_converter.client_model_info = self._get_client_model_info()
+
             # 检查是否有 TTS URL（从 extra 中获取，如果 AstrBot TTS 插件生成了）
             tts_url = self.get_extra("tts_url")
+            reply_text = self._extract_reply_text(message)
 
             # 转换 MessageChain 为表演序列
             sequence = self.output_converter.convert(message, tts_url=tts_url)
@@ -104,6 +156,9 @@ class Live2DMessageEvent(AstrMessageEvent):
             logger.info(
                 f"[Live2D] 已发送表演序列到客户端 {self.client_id}，包含 {len(sequence)} 个元素"
             )
+
+            if not self._has_explicit_perform_controls(sequence):
+                await self._send_planner_followup(reply_text, reset_policy="previous")
 
         except Exception as e:
             logger.error(f"[Live2D] 发送消息失败: {e}", exc_info=True)
@@ -138,10 +193,13 @@ class Live2DMessageEvent(AstrMessageEvent):
         # 流式输出：逐块发送
         try:
             buffer = ""
+            full_components: list[BaseMessageComponent] = []
 
             async for chain in generator:
                 if not chain or not chain.chain:
                     continue
+
+                full_components.extend(chain.chain)
 
                 for comp in chain.chain:
                     if isinstance(comp, Plain):
@@ -170,6 +228,10 @@ class Live2DMessageEvent(AstrMessageEvent):
                         sequence=sequence, interrupt=False
                     )
                     await self._send_to_client(packet)
+
+            if full_components:
+                reply_text = self._extract_reply_text(MessageChain(chain=full_components))
+                await self._send_planner_followup(reply_text, reset_policy="keep")
 
             logger.info("[Live2D] 流式消息发送完成")
 
