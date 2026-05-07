@@ -66,9 +66,11 @@ class OutputMessageConverter:
                     parts.append(text)
                 continue
 
-            fallback_text = self._format_component_text(component)
-            if fallback_text:
-                parts.append(fallback_text)
+            if Record and isinstance(component, Record):
+                record_text = getattr(component, "text", "")
+                if isinstance(record_text, str) and record_text.strip():
+                    parts.append(record_text.strip())
+                continue
 
         return "".join(parts).strip()
 

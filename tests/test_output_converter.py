@@ -32,24 +32,33 @@ def install_astrbot_stubs() -> None:
         def __init__(self, text: str = ""):
             self.text = text
 
+    class Record:
+        def __init__(self, file: str = "", text: str | None = None):
+            self.file = file
+            self.text = text
+
+    class Image:
+        def __init__(self, file: str = ""):
+            self.file = file
+
     component_names = [
         "At",
         "AtAll",
         "Face",
         "File",
         "Forward",
-        "Image",
         "Json",
         "Node",
         "Nodes",
         "Poke",
-        "Record",
         "Reply",
         "Video",
     ]
 
     event_module.MessageChain = MessageChain
     components_module.Plain = Plain
+    components_module.Record = Record
+    components_module.Image = Image
     for name in component_names:
         setattr(components_module, name, type(name, (), {}))
 
@@ -136,6 +145,37 @@ class OutputMessageConverterTest(unittest.TestCase):
                 "id": "Sad",
             },
         )
+
+    def test_extract_text_summary_uses_tts_record_text(self) -> None:
+        from astrbot.api.event import MessageChain
+        from astrbot.api.message_components import Image, Plain, Record
+
+        summary = self.converter.extract_text_summary(
+            MessageChain(
+                [
+                    Record(file="voice.wav", text="我也很高兴见到你呀"),
+                    Image(file="meme.png"),
+                    Plain(" 今天想聊点什么？ "),
+                ]
+            )
+        )
+
+        self.assertEqual(summary, "我也很高兴见到你呀今天想聊点什么？")
+
+    def test_extract_text_summary_ignores_media_without_text(self) -> None:
+        from astrbot.api.event import MessageChain
+        from astrbot.api.message_components import Image, Record
+
+        summary = self.converter.extract_text_summary(
+            MessageChain(
+                [
+                    Record(file="voice.wav"),
+                    Image(file="meme.png"),
+                ]
+            )
+        )
+
+        self.assertEqual(summary, "")
 
 
 if __name__ == "__main__":
