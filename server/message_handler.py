@@ -8,6 +8,7 @@ from typing import TypedDict
 from astrbot.api import logger
 
 from ..core.config import ConfigLike
+from ..core.diagnostics import summarize_expression_type_assignments
 from ..core.protocol import (
     BasePacket,
     create_expression_element,
@@ -523,6 +524,7 @@ class MessageHandler:
         expression_catalog = payload.get("expressionCatalog", []) or []
         semantic_presets = payload.get("semanticPresets", {}) or {}
         discovery = payload.get("discovery", {}) or {}
+        available_expression_types = summarize_expression_type_assignments(payload)
 
         # 计算总动作数和动作详情
         total_motions = 0
@@ -542,7 +544,8 @@ class MessageHandler:
             f"combo={bool(capabilities.get('expressionCombo'))}, "
             f"semantic={bool(capabilities.get('semanticExpression'))}, "
             f"catalog={len(expression_catalog)}, "
-            f"presets={len(semantic_presets)}"
+            f"presets={len(semantic_presets)}, "
+            f"available_types={len(available_expression_types)}"
         )
         logger.debug(f"动作组详情: {', '.join(motion_details)}")
 
@@ -556,6 +559,16 @@ class MessageHandler:
 
         logger.debug(f"表情列表: {expressions}")
         logger.debug(f"表情能力: {capabilities}")
+        logger.debug(
+            "可用表情类型: %s",
+            {
+                expression_type: {
+                    "count": len(expression_ids),
+                    "expressions": expression_ids,
+                }
+                for expression_type, expression_ids in available_expression_types.items()
+            },
+        )
         if isinstance(discovery, dict) and discovery:
             logger.debug(
                 "模型发现摘要: mode=%s, sources=%s, companions=%s, declared_expr=%s, "

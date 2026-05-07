@@ -72,7 +72,7 @@ class PlannerClientTest(unittest.IsolatedAsyncioTestCase):
                 "name": "测试模型",
                 "motionGroups": {"Happy": [{"index": 0, "file": "happy.motion3.json"}]},
                 "expressions": ["Smile"],
-                "semanticPresets": {"happy": ["Smile"], "sad": []},
+                "semanticPresets": {"开心": ["Smile"], "sad": []},
                 "expressionCatalog": [
                     {"id": "Smile", "tags": ["happy"], "supportsCombo": True},
                     {"id": "Sad", "tags": ["sad"], "supportsCombo": True},

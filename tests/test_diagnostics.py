@@ -9,6 +9,7 @@ if str(PLUGIN_PARENT) not in sys.path:
 from astrbot_plugin_live2d_adapter.core.diagnostics import (  # noqa: E402
     preview_text,
     summarize_client_model_info,
+    summarize_expression_type_assignments,
     summarize_perform_sequence,
 )
 
@@ -24,7 +25,7 @@ class DiagnosticsTest(unittest.TestCase):
                 "capabilities": {"expressionCombo": True},
                 "expressions": ["Smile"],
                 "expressionCatalog": [{"id": "Smile"}],
-                "semanticPresets": {"happy": ["Smile"]},
+                "semanticPresets": {"happy": ["Smile"], "sad": []},
                 "motionGroups": {"Idle": []},
             }
         )
@@ -35,8 +36,29 @@ class DiagnosticsTest(unittest.TestCase):
                 "capabilities": {"expressionCombo": True},
                 "expressions": 1,
                 "expressionCatalog": 1,
-                "semanticPresets": 1,
+                "semanticPresets": 2,
+                "availableExpressionTypes": ["happy"],
                 "motionGroups": 1,
+            },
+        )
+
+    def test_summarize_expression_type_assignments_normalizes_non_empty_types(self) -> None:
+        assignments = summarize_expression_type_assignments(
+            {
+                "semanticPresets": {
+                    "开心": ["Smile", "Smile", ""],
+                    "sad": [],
+                    "unknown": ["Mystery"],
+                    "脸红": ["Blush"],
+                }
+            }
+        )
+
+        self.assertEqual(
+            assignments,
+            {
+                "happy": ["Smile"],
+                "blush": ["Blush"],
             },
         )
 

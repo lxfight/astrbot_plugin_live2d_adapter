@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .expression_types import get_available_expression_type_assignments
+
 
 def preview_text(value: Any, limit: int = 120) -> str:
     text = " ".join(str(value or "").split())
@@ -37,14 +39,24 @@ def summarize_client_model_info(client_model_info: dict[str, Any] | None) -> dic
     presets = client_model_info.get("semanticPresets")
     motion_groups = client_model_info.get("motionGroups")
     capabilities = client_model_info.get("capabilities")
+    available_type_assignments = get_available_expression_type_assignments(
+        client_model_info
+    )
 
     return {
         "capabilities": capabilities if isinstance(capabilities, dict) else {},
         "expressions": len(expressions) if isinstance(expressions, list) else 0,
         "expressionCatalog": len(catalog) if isinstance(catalog, list) else 0,
         "semanticPresets": len(presets) if isinstance(presets, dict) else 0,
+        "availableExpressionTypes": list(available_type_assignments.keys()),
         "motionGroups": len(motion_groups) if isinstance(motion_groups, dict) else 0,
     }
+
+
+def summarize_expression_type_assignments(
+    client_model_info: dict[str, Any] | None,
+) -> dict[str, list[str]]:
+    return get_available_expression_type_assignments(client_model_info)
 
 
 def summarize_perform_sequence(sequence: list[dict[str, Any]] | None) -> list[dict[str, Any]]:

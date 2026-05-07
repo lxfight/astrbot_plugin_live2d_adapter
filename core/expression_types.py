@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 LIVE2D_EXPRESSION_TYPES = (
     "neutral",
     "calm",
@@ -99,3 +101,67 @@ TAG_ALIASES: dict[str, set[str]] = {
     "dizzy": {"dizzy", "confounded", "晕", "晕眩", "混乱"},
     "speaking": {"speaking", "talk", "speak", "chat", "说话", "讲话"},
 }
+
+
+def normalize_expression_type(value: Any) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return None
+
+    for canonical, aliases in TAG_ALIASES.items():
+        if normalized == canonical or normalized in aliases:
+            return canonical
+    return normalized if normalized in LIVE2D_EXPRESSION_TYPE_SET else None
+
+
+def _normalize_expression_ids(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        expression_id = str(item or "").strip()
+        key = expression_id.lower()
+        if expression_id and key not in seen:
+            seen.add(key)
+            result.append(expression_id)
+    return result
+
+
+def get_available_expression_type_assignments(
+    client_model_info: dict[str, Any] | None,
+) -> dict[str, list[str]]:
+    if not isinstance(client_model_info, dict):
+        return {}
+
+    presets = client_model_info.get("semanticPresets")
+    if not isinstance(presets, dict):
+        return {}
+
+    assignments: dict[str, list[str]] = {}
+    seen_by_type: dict[str, set[str]] = {}
+    for raw_type, raw_items in presets.items():
+        expression_type = normalize_expression_type(raw_type)
+        if not expression_type:
+            continue
+
+        for expression_id in _normalize_expression_ids(raw_items):
+            seen = seen_by_type.setdefault(expression_type, set())
+            key = expression_id.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            assignments.setdefault(expression_type, []).append(expression_id)
+
+    return {
+        expression_type: assignments[expression_type]
+        for expression_type in LIVE2D_EXPRESSION_TYPES
+        if assignments.get(expression_type)
+    }
+
+
+def get_available_expression_types(
+    client_model_info: dict[str, Any] | None,
+) -> list[str]:
+    return list(get_available_expression_type_assignments(client_model_info).keys())
