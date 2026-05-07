@@ -9,6 +9,11 @@ try:
 except Exception:  # pragma: no cover
     logger = None
 
+from ..core.diagnostics import (
+    preview_text,
+    summarize_client_model_info,
+    summarize_perform_sequence,
+)
 from ..core.planner_runtime import resolve_planner_runtime_config
 from ..converters.live2d_plan_resolver import Live2DPlanResolver
 from ..llm.planner_client import PlannerLLMClient
@@ -66,9 +71,25 @@ class ExpressionPlannerService:
     ) -> list[dict[str, Any]]:
         planner_config = self.get_runtime_config()
         if not planner_config.get("enabled"):
+            if logger:
+                logger.debug("[Live2DPlanner] 规划器未启用，跳过补发表演")
             return []
         if not self._has_actionable_expression_capability(client_model_info):
+            if logger:
+                logger.debug(
+                    "[Live2DPlanner] 客户端缺少可用表情能力，跳过补发表演: "
+                    f"model={summarize_client_model_info(client_model_info)}"
+                )
             return []
+
+        if logger:
+            logger.debug(
+                "[Live2DPlanner] 准备规划补发表演: "
+                f"reply_len={len(str(reply_text or ''))}, "
+                f"reply_preview={preview_text(reply_text)}, "
+                f"model={summarize_client_model_info(client_model_info)}, "
+                f"reset_policy={reset_policy}"
+            )
 
         resolver = Live2DPlanResolver(client_model_info)
         plan = await self.client.plan_reply(
@@ -77,9 +98,22 @@ class ExpressionPlannerService:
             planner_config=planner_config,
         )
         if not plan:
+            if logger:
+                logger.debug("[Live2DPlanner] 规划 Provider 未返回有效结果，跳过补发表演")
             return []
 
         min_confidence = float(planner_config.get("min_confidence", 0.45) or 0.45)
+        if logger:
+            logger.debug(
+                "[Live2DPlanner] 规划摘要: "
+                f"motion_intent={plan.motion_intent}, "
+                f"expression_intent={plan.expression_intent}, "
+                f"emotion_tags={plan.emotion_tags}, "
+                f"intensity={plan.intensity:.2f}, "
+                f"hold_ms={plan.hold_ms}, "
+                f"confidence={plan.confidence:.2f}, "
+                f"min_confidence={min_confidence:.2f}"
+            )
         if plan.confidence < min_confidence:
             if logger:
                 logger.debug(
@@ -92,6 +126,9 @@ class ExpressionPlannerService:
             logger.info(
                 f"[Live2DPlanner] 已生成补发表演: source={planner_config.get('source')}, "
                 f"motion_intent={plan.motion_intent}, "
-                f"emotion_tags={plan.emotion_tags}, sequence={len(sequence)}"
+                f"emotion_tags={plan.emotion_tags}, "
+                f"sequence={summarize_perform_sequence(sequence)}"
             )
+        elif logger:
+            logger.debug("[Live2DPlanner] 规划结果未映射到可执行序列，跳过补发表演")
         return sequence

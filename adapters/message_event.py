@@ -14,6 +14,11 @@ except ImportError as e:
     ) from e
 
 from ..converters.output_converter import OutputMessageConverter
+from ..core.diagnostics import (
+    preview_text,
+    summarize_message_chain,
+    summarize_perform_sequence,
+)
 from ..core.protocol import BasePacket
 from ..core.protocol import Protocol as ProtocolClass
 from ..services.expression_planner_service import ExpressionPlannerService
@@ -109,7 +114,8 @@ class Live2DMessageEvent(AstrMessageEvent):
         )
         await self._send_to_client(packet)
         logger.info(
-            f"[Live2DPlanner] 已向客户端 {self.client_id} 补发表演序列，元素数: {len(followup_sequence)}"
+            f"[Live2DPlanner] 已向客户端 {self.client_id} 补发表演序列: "
+            f"sequence={summarize_perform_sequence(followup_sequence)}"
         )
 
     async def send(self, message: MessageChain | None) -> None:
@@ -130,6 +136,13 @@ class Live2DMessageEvent(AstrMessageEvent):
             # 检查是否有 TTS URL（从 extra 中获取，如果 AstrBot TTS 插件生成了）
             tts_url = self.get_extra("tts_url")
             reply_text = self._extract_reply_text(message)
+            logger.debug(
+                "[Live2D] 准备转换消息链: "
+                f"components={summarize_message_chain(message)}, "
+                f"reply_len={len(reply_text)}, "
+                f"reply_preview={preview_text(reply_text)}, "
+                f"has_tts_url={bool(tts_url)}"
+            )
 
             # 转换 MessageChain 为表演序列
             sequence = self.output_converter.convert(message, tts_url=tts_url)
@@ -154,7 +167,8 @@ class Live2DMessageEvent(AstrMessageEvent):
             await self._send_to_client(packet)
 
             logger.info(
-                f"[Live2D] 已发送表演序列到客户端 {self.client_id}，包含 {len(sequence)} 个元素"
+                f"[Live2D] 已发送表演序列到客户端 {self.client_id}: "
+                f"interrupt={should_interrupt}, sequence={summarize_perform_sequence(sequence)}"
             )
 
             if not self._has_explicit_perform_controls(sequence):
