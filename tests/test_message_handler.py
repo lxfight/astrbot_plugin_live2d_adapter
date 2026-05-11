@@ -29,7 +29,7 @@ class MessageHandlerTest(unittest.IsolatedAsyncioTestCase):
                 {"id": "Blush", "tags": ["blush"], "supportsCombo": True},
             ],
             "semanticPresets": {
-                "开心": ["Smile"],
+                "happy": ["Smile"],
                 "sad": [],
                 "blush": ["Blush"],
             },

@@ -46,10 +46,10 @@ class DiagnosticsTest(unittest.TestCase):
         assignments = summarize_expression_type_assignments(
             {
                 "semanticPresets": {
-                    "开心": ["Smile", "Smile", ""],
+                    "happy": ["Smile", "Smile", ""],
                     "sad": [],
                     "unknown": ["Mystery"],
-                    "脸红": ["Blush"],
+                    "blush": ["Blush"],
                 }
             }
         )

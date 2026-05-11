@@ -5,7 +5,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ..core.expression_types import LIVE2D_EXPRESSION_TYPE_SET, TAG_ALIASES
+from ..core.expression_types import (
+    LIVE2D_EXPRESSION_TYPE_SET,
+    TAG_ALIASES,
+    normalize_expression_type,
+)
 from ..core.live2d_plan_schema import Live2DPerformPlan
 from ..core.protocol import create_expression_element, create_motion_element
 
@@ -74,7 +78,7 @@ class Live2DPlanResolver:
 
         normalized: dict[str, list[str]] = {}
         for key, value in presets.items():
-            normalized_key = self._normalize_tag(key)
+            normalized_key = normalize_expression_type(key)
             if not normalized_key or not isinstance(value, list):
                 continue
             items = [str(item or "").strip() for item in value]

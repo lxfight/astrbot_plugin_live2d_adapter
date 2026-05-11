@@ -343,6 +343,48 @@ class Live2DPlanResolverTest(unittest.TestCase):
             ],
         )
 
+    def test_resolve_ignores_non_fixed_semantic_preset_keys(self) -> None:
+        resolver = Live2DPlanResolver(
+            {
+                "capabilities": {
+                    "expressionCombo": True,
+                    "semanticExpression": True,
+                },
+                "expressionCatalog": [
+                    {
+                        "id": "Smile",
+                        "aliases": ["Smile"],
+                        "tags": ["happy"],
+                        "supportsCombo": True,
+                    },
+                ],
+                "semanticPresets": {
+                    "开心": ["Smile"],
+                },
+            }
+        )
+
+        plan = Live2DPerformPlan(
+            emotion_tags=["开心"],
+            intensity=0.7,
+            confidence=0.9,
+        )
+
+        sequence = resolver.resolve(plan, reset_policy="previous")
+
+        self.assertEqual(
+            sequence,
+            [
+                {
+                    "type": "expression",
+                    "fade": 300,
+                    "combo": [{"id": "Smile", "weight": 0.7}],
+                    "holdMs": 0,
+                    "resetPolicy": "previous",
+                }
+            ],
+        )
+
 
 
 if __name__ == "__main__":
