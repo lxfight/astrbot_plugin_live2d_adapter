@@ -53,6 +53,27 @@ class OutputMessageConverter:
         self.resource_config = resource_config or {}
         self.client_model_info = client_model_info or {}
 
+    def extract_text_summary(self, message_chain: MessageChainType | None) -> str:
+        """提取消息链文本摘要，用于独立规划 LLM"""
+        if not message_chain or not message_chain.chain:
+            return ""
+
+        parts: list[str] = []
+        for component in message_chain.chain:
+            if Plain and isinstance(component, Plain):
+                text = component.text.strip()
+                if text:
+                    parts.append(text)
+                continue
+
+            if Record and isinstance(component, Record):
+                record_text = getattr(component, "text", "")
+                if isinstance(record_text, str) and record_text.strip():
+                    parts.append(record_text.strip())
+                continue
+
+        return "".join(parts).strip()
+
     def convert(
         self, message_chain: MessageChainType, tts_url: str | None = None
     ) -> list[dict[str, Any]]:
@@ -132,6 +153,8 @@ class OutputMessageConverter:
                     expression_elem = self._build_expression_from_component(component)
                     if expression_elem:
                         sequence.append(expression_elem)
+                elif component.type == "live2d_perform_plan":
+                    sequence.extend(self._build_perform_plan_from_component(component))
                 else:
                     # 其他组件转为文本
                     fallback_text = self._format_component_text(component)
@@ -163,17 +186,21 @@ class OutputMessageConverter:
         if not group:
             return None
 
+        resolved_group = self._resolve_motion_group_name(str(group))
+        if not resolved_group:
+            return None
+
         # 验证动作组是否存在
-        if not self._validate_motion_group(group):
+        if not self._validate_motion_group(resolved_group):
             return None
 
         # 获取动作索引并验证
         index = getattr(component, "index", 0)
-        if not self._validate_motion_index(group, index):
+        if not self._validate_motion_index(resolved_group, index):
             return None
 
         motion_elem = create_motion_element(
-            group=group,
+            group=resolved_group,
             index=index,
             priority=getattr(component, "priority", 2),
             loop=getattr(component, "loop", False),
@@ -187,6 +214,32 @@ class OutputMessageConverter:
             motion_elem["motionType"] = motion_type
 
         return motion_elem
+
+    def _resolve_motion_group_name(self, group: str | None) -> str | None:
+        if group is None:
+            return None
+
+        normalized_group = str(group).strip()
+        if not normalized_group:
+            return None
+
+        if not self.client_model_info:
+            return normalized_group
+
+        motion_groups = self.client_model_info.get("motionGroups", {})
+        if not isinstance(motion_groups, dict) or not motion_groups:
+            return normalized_group
+
+        if normalized_group in motion_groups:
+            return normalized_group
+
+        group_lower = normalized_group.lower()
+        for available_group in motion_groups.keys():
+            candidate = str(available_group).strip()
+            if candidate.lower() == group_lower:
+                return candidate
+
+        return None
 
     def _validate_motion_group(self, group: str) -> bool:
         """验证动作组是否存在于客户端模型中"""
@@ -225,25 +278,152 @@ class OutputMessageConverter:
         # 检查索引是否在范围内
         return 0 <= index < len(motions)
 
-    def _validate_expression(self, expression_id: str | int) -> bool:
-        """验证表情是否存在于客户端模型中"""
-        if not self.client_model_info:
-            return True  # 没有模型信息时不验证
+    def _resolve_expression_id(
+        self, expression_id: str | int | None, *, allow_index: bool = True
+    ) -> str | int | None:
+        if expression_id is None or isinstance(expression_id, bool):
+            return None
 
         expressions = self.client_model_info.get("expressions", [])
-        if not expressions:
-            return True  # 模型信息中没有表情列表时不验证
+        if isinstance(expression_id, int):
+            if (
+                isinstance(expressions, list)
+                and 0 <= expression_id < len(expressions)
+            ):
+                candidate = str(expressions[expression_id] or "").strip()
+                return candidate or None
+            if not self.client_model_info and allow_index:
+                return expression_id
+            return None
 
-        expression_str = str(expression_id)
-        if expression_str not in expressions:
-            # 尝试不区分大小写匹配
+        expression_str = str(expression_id).strip()
+        if not expression_str:
+            return None
+
+        if not self.client_model_info:
+            return expression_str
+
+        expression_catalog = self.client_model_info.get("expressionCatalog", [])
+        if isinstance(expression_catalog, list) and expression_catalog:
             expression_lower = expression_str.lower()
-            for available_expr in expressions:
-                if str(available_expr).lower() == expression_lower:
-                    return True
-            return False
+            for entry in expression_catalog:
+                if not isinstance(entry, dict):
+                    continue
+                entry_id = str(entry.get("id", "") or "").strip()
+                aliases = entry.get("aliases") or []
+                candidates = [entry_id, *aliases] if isinstance(aliases, list) else [entry_id]
+                for candidate in candidates:
+                    candidate_text = str(candidate or "").strip()
+                    if candidate_text and candidate_text.lower() == expression_lower:
+                        return entry_id or None
+            return None
 
-        return True
+        if not expressions:
+            return expression_str
+
+        if expression_str in expressions:
+            return expression_str
+
+        expression_lower = expression_str.lower()
+        for available_expr in expressions:
+            candidate = str(available_expr or "").strip()
+            if candidate.lower() == expression_lower:
+                return candidate
+
+        if expression_lower.isdigit():
+            index = int(expression_lower)
+            if 0 <= index < len(expressions):
+                candidate = str(expressions[index] or "").strip()
+                return candidate or None
+
+        return None
+
+    def _validate_expression(self, expression_id: str | int) -> bool:
+        """验证表情是否存在于客户端模型中"""
+        return self._resolve_expression_id(expression_id) is not None
+
+    def _normalize_expression_combo(self, raw_combo: Any) -> list[dict[str, Any]]:
+        if not isinstance(raw_combo, list):
+            return []
+
+        combo: list[dict[str, Any]] = []
+        for item in raw_combo:
+            if isinstance(item, str):
+                expression_id = self._resolve_expression_id(item, allow_index=False)
+                if expression_id:
+                    combo.append({"id": expression_id})
+                continue
+
+            if not isinstance(item, dict):
+                continue
+
+            expression_id = self._resolve_expression_id(
+                item.get("id"), allow_index=False
+            )
+            if expression_id is None:
+                continue
+
+            normalized: dict[str, Any] = {"id": expression_id}
+            weight = item.get("weight")
+            if isinstance(weight, (int, float)):
+                normalized["weight"] = max(0.0, min(float(weight), 1.0))
+            combo.append(normalized)
+
+        return combo
+
+    def _normalize_expression_semantic(self, raw_semantic: Any) -> list[dict[str, Any]]:
+        if not isinstance(raw_semantic, list):
+            return []
+
+        semantic: list[dict[str, Any]] = []
+        for item in raw_semantic:
+            if isinstance(item, str):
+                tag = item.strip()
+                if tag:
+                    semantic.append({"tag": tag})
+                continue
+
+            if not isinstance(item, dict):
+                continue
+
+            tag = str(item.get("tag", "") or "").strip()
+            if not tag:
+                continue
+
+            normalized: dict[str, Any] = {"tag": tag}
+            weight = item.get("weight")
+            if isinstance(weight, (int, float)):
+                normalized["weight"] = max(0.0, min(float(weight), 1.0))
+            semantic.append(normalized)
+
+        return semantic
+
+    def _build_perform_plan_from_component(self, component: Any) -> list[dict[str, Any]]:
+        sequence: list[dict[str, Any]] = []
+
+        motion_component = type(
+            "MotionShim",
+            (),
+            {
+                "group": getattr(component, "group", None)
+                or getattr(component, "motion_group", None),
+                "index": getattr(component, "index", 0),
+                "priority": getattr(component, "priority", 2),
+                "loop": getattr(component, "loop", False),
+                "fade_in": getattr(component, "fade_in", 300),
+                "fade_out": getattr(component, "fade_out", 300),
+                "motion_type": getattr(component, "motion_type", None),
+            },
+        )()
+        motion_element = self._build_motion_from_component(motion_component)
+        if motion_element:
+            sequence.append(motion_element)
+
+        expression_element = self._build_expression_from_component(component)
+        if expression_element:
+            sequence.append(expression_element)
+
+        return sequence
 
     def _build_expression_from_component(self, component: Any) -> dict[str, Any] | None:
         """从自定义 Live2DExpression 组件构建表情元素
@@ -256,16 +436,28 @@ class OutputMessageConverter:
         expression_id = getattr(component, "expression_id", None) or getattr(
             component, "id", None
         )
-        if expression_id is None:
+        combo = self._normalize_expression_combo(getattr(component, "combo", None))
+        semantic = self._normalize_expression_semantic(
+            getattr(component, "semantic", None)
+        )
+
+        if expression_id is None and not combo and not semantic:
             return None
 
-        # 验证表情是否存在
-        if not self._validate_expression(expression_id):
-            return None
+        if combo:
+            expression_id = None
+        elif expression_id is not None:
+            expression_id = self._resolve_expression_id(expression_id)
+            if expression_id is None:
+                return None
 
         expression_elem = create_expression_element(
             expression_id=expression_id,
             fade=getattr(component, "fade", 300),
+            combo=combo or None,
+            semantic=semantic or None,
+            hold_ms=getattr(component, "hold_ms", None),
+            reset_policy=getattr(component, "reset_policy", None),
         )
 
         # 支持 motionType

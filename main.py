@@ -7,14 +7,22 @@ from astrbot.api.event import AstrMessageEvent, MessageEventResult, filter
 from astrbot.api.star import Context, Star
 
 from .adapters.platform_adapter import Live2DPlatformAdapter
+from .core.planner_runtime import (
+    clear_plugin_runtime,
+    describe_planner_source,
+    register_plugin_runtime,
+    resolve_planner_runtime_config,
+)
 
 
 class Live2DAdapter(Star):
     """Live2D 平台适配器插件"""
 
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: dict | None = None):
         super().__init__(context)
         self.context = context
+        self.config = config or {}
+        register_plugin_runtime(context, self.config)
 
     def _get_adapter(self) -> Live2DPlatformAdapter | None:
         """获取 Live2D 平台适配器实例"""
@@ -397,6 +405,14 @@ class Live2DAdapter(Star):
             token_source = getattr(adapter, "_auth_token_source", "unknown")
             token_file = getattr(adapter, "_auth_token_file", None)
             token_file_line = f"\n  - 密钥文件: {token_file}" if token_file else ""
+            planner_config = resolve_planner_runtime_config()
+            planner_lines = [
+                f"  - 模式来源: {describe_planner_source(planner_config['source'])}",
+                f"  - 生效模式: {planner_config['effective_mode']}",
+                f"  - 独立 Provider: {planner_config['provider_id'] or '未配置'}",
+                f"  - 最小置信度: {planner_config['min_confidence']}",
+                f"  - 超时: {planner_config['timeout_seconds']}秒",
+            ]
 
             config_msg = f"""[Live2D Adapter] 适配器配置
 
@@ -424,7 +440,10 @@ WebSocket:
 临时文件:
   - 临时目录: {getattr(config, "temp_dir", "未知")}
   - 临时 TTL: {self._format_duration(getattr(config, "temp_ttl_seconds", 0))}
-  - 最大文件: {getattr(config, "temp_max_files", 0)}"""
+  - 最大文件: {getattr(config, "temp_max_files", 0)}
+
+独立表演规划:
+{chr(10).join(planner_lines)}"""
 
             return MessageEventResult().message(config_msg)
 
@@ -433,6 +452,9 @@ WebSocket:
             return MessageEventResult().message(
                 f"[Live2D Adapter] 错误: 获取配置失败 - {e}"
             )
+
+    async def terminate(self) -> None:
+        clear_plugin_runtime()
 
 
 __all__ = ["Live2DAdapter", "Live2DPlatformAdapter"]

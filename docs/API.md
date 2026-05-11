@@ -55,8 +55,9 @@
   "id": "uuid",
   "ts": 1234567890123,
   "payload": {
-    "sessionId": "live2d_session_client-001",
-    "userId": "live2d_user_client-001",
+    "version": "1.0.0",
+    "serverTime": 1234567890123,
+    "features": ["message_chain", "tts_url", "multi_modal", "voice_input"],
     "capabilities": [
       "input.message",
       "input.touch",
@@ -66,6 +67,7 @@
       "state.ready",
       "state.playing",
       "state.config",
+      "state.model",
       "resource.prepare",
       "resource.commit",
       "resource.get",
@@ -79,6 +81,10 @@
       "maxInlineBytes": 262144,
       "resourceBaseUrl": "http://127.0.0.1:9090",
       "resourcePath": "/resources"
+    },
+    "session": {
+      "sessionId": "live2d_session_client-001",
+      "userId": "live2d_user_client-001"
     }
   }
 }
@@ -179,6 +185,7 @@
   "ts": 1234567890123,
   "payload": {
     "interrupt": true,
+    "interruptible": true,
     "sequence": [
       {
         "type": "text",
@@ -205,8 +212,12 @@
       },
       {
         "type": "expression",
-        "id": "smile",
+        "combo": [
+          { "id": "Smile", "weight": 0.8 }
+        ],
         "fade": 300,
+        "holdMs": 1200,
+        "resetPolicy": "previous",
         "motionType": "happy"
       },
       {
@@ -219,6 +230,16 @@
   }
 }
 ```
+
+**payload 字段说明**:
+- `interrupt`: 是否先中断当前表演再执行本次 `sequence`
+- `interruptible`: 当前这次 `perform.show` 是否允许被后续补发表演安全打断；当前适配器仅在补发表演包中按需下发
+- `sequence`: 要按顺序执行的表演元素数组
+
+**当前实现约定**:
+- 普通回复首包通常使用 `interrupt: true`
+- 同一事件窗口内的追加包会使用 `interrupt: false`
+- 独立表演规划补发表演会使用 `interrupt: false` 且 `interruptible: true`
 
 **sequence 元素类型**:
 
@@ -281,11 +302,35 @@
 ```json
 {
   "type": "expression",
-  "id": "表情ID",
+  "id": "表情ID（单表情模式，可选）",
+  "combo": [
+    { "id": "Smile", "weight": 0.8 },
+    { "id": "Sad", "weight": 0.2 }
+  ],
+  "semantic": [
+    { "tag": "thinking", "weight": 0.6 }
+  ],
   "fade": 300,
+  "holdMs": 1200,
+  "resetPolicy": "previous",
   "motionType": "happy"
 }
 ```
+
+**expression 字段说明**:
+- `id`: 单个表情 ID；与 `combo` / `semantic` 三选一，通常优先由服务端显式下发
+- `combo`: 表情组合数组；每项至少包含 `id`，可选 `weight`
+- `semantic`: 语义表情数组；每项至少包含 `tag`，可选 `weight`
+- `fade`: 表情切换淡入淡出时间，单位毫秒；当前是否生效取决于客户端实现，服务端仅负责透传
+- `holdMs`: 表情保持时长，单位毫秒；`0` 表示立即按 `resetPolicy` 处理
+- `resetPolicy`: 表情结束后的恢复策略，当前规划链路实际使用 `keep` / `previous`
+- `motionType`: 语义提示字段，帮助客户端按语境选择更合适的表现；当前是否被真正消费取决于客户端实现
+
+**expression 约束**:
+- `combo` 只有在客户端 `state.model.capabilities.expressionCombo=true` 且条目标记 `supportsCombo=true` 时才应发送
+- `semantic` 只有在客户端 `state.model.capabilities.semanticExpression=true` 时才应发送
+- `weight` 范围为 `0.0` 到 `1.0`
+- `resetPolicy` 当前文档按实际实现列出 `keep` / `previous`，桌面端新增策略时应向后兼容
 
 #### image - 图片展示
 ```json
@@ -516,6 +561,103 @@
   }
 }
 ```
+
+### 4. 模型信息更新 (state.model)
+
+**方向**: 客户端 → 服务端
+
+```json
+{
+  "op": "state.model",
+  "id": "uuid",
+  "ts": 1234567890123,
+  "payload": {
+    "name": "Hiyori",
+    "motionGroups": {
+      "Idle": [
+        { "index": 0, "file": "motions/idle.motion3.json" }
+      ],
+      "Happy": [
+        { "index": 0, "file": "motions/happy.motion3.json" }
+      ]
+    },
+    "expressions": ["Smile", "Sad"],
+    "capabilities": {
+      "expressionCombo": true,
+      "semanticExpression": true,
+      "expressionProfile": true
+    },
+    "expressionCatalog": [
+      {
+        "id": "Smile",
+        "aliases": ["smile", "开心"],
+        "tags": ["happy"],
+        "conflictGroups": ["emotion"],
+        "supportsCombo": true
+      },
+      {
+        "id": "Think",
+        "aliases": ["think", "思考"],
+        "tags": ["thinking"],
+        "supportsCombo": false
+      }
+    ],
+    "semanticPresets": {
+      "happy": ["Smile"],
+      "thinking": ["Think"]
+    },
+    "discovery": {
+      "mode": "hybrid",
+      "sources": ["model3", "companion", "scan"],
+      "companionFiles": ["Hiyori.vtube.json"],
+      "standardDeclaredExpressions": 8,
+      "standardDeclaredMotionGroups": 6,
+      "discoveredExpressions": 10,
+      "discoveredMotionGroups": 7,
+      "scannedExpressionCount": 10,
+      "scannedMotionCount": 24,
+      "warnings": []
+    }
+  }
+}
+```
+
+**state.model 字段说明**:
+- `name`: 当前加载模型名称
+- `motionGroups`: 动作组映射，键为组名，值为动作数组；每个动作通常包含 `index`，可带 `file`
+- `expressions`: 传统单表情 ID 列表，用于基础兼容
+- `capabilities`: 客户端表达能力声明对象
+- `expressionCatalog`: 扩展表情目录，供服务端做别名、标签和组合能力解析
+- `semanticPresets`: 语义标签到推荐表情 ID 的映射
+- `discovery`: 客户端模型扫描与发现摘要
+
+**capabilities 子结构**:
+- `expressionCombo`: 是否支持 `expression.combo`
+- `semanticExpression`: 是否支持 `expression.semantic`
+- `expressionProfile`: 是否已加载 `astrbot.live2d.profile.json` 这类表情语义增强配置；当前主要用于信息上报，服务端可按需参考
+
+**expressionCatalog 子结构**:
+- `id`: 规范表情 ID
+- `aliases`: 可匹配的别名列表，供服务端把自然语言或旧 ID 归一化
+- `tags`: 语义标签列表，如 `happy`、`thinking`
+- `conflictGroups`: 冲突组声明，供客户端决定互斥关系
+- `supportsCombo`: 该表情是否允许进入 `combo`
+
+**semanticPresets 子结构**:
+- 键为规范语义标签
+- 值为候选表情 ID 数组，服务端通常取前几个可用结果进行映射
+
+**discovery 子结构**:
+- `mode`: 模型发现模式摘要
+- `sources`: 本次发现依赖的数据源列表
+- `companionFiles`: 伴随元数据文件列表
+- `standardDeclaredExpressions`: 标准声明表情数量
+- `standardDeclaredMotionGroups`: 标准声明动作组数量
+- `discoveredExpressions`: 最终纳入兼容清单的表情数量
+- `discoveredMotionGroups`: 最终纳入兼容清单的动作组数量
+- `scannedExpressionCount`: 扫描得到的表情数量
+- `scannedMotionCount`: 扫描得到的动作数量
+- `warnings`: 发现过程中的警告数组
 
 ---
 
@@ -849,7 +991,7 @@ resource_max_inline_bytes: 262144
 
 1. **动作类型 (motionType)**: 这是一个提示字段，桌面端可以根据此字段自行选择合适的动作和表情，而不是硬编码具体的资源 ID
 2. **资源管理**: 大文件（> 256KB）建议使用 URL 引用，小文件可以使用 inline base64
-3. **流式输出**: 服务端支持流式发送文本，客户端需要处理 `interrupt: false` 的连续 `perform.show` 消息
+3. **流式输出**: 服务端支持流式发送文本，客户端需要处理 `interrupt: false` 的连续 `perform.show` 消息；补发表演还可能带上 `interruptible: true`
 4. **心跳保活**: 客户端需要定期发送 `sys.ping`，超时未响应会被断开连接
 5. **WebSocket 帧限制**: 服务端 `max_size` 为 10MB。截图等大数据建议走资源服务器上传（`resource.prepare` → HTTP PUT），避免超大帧
 6. **桌面感知请求-响应**: `desktop.*` 指令使用相同 `id` 进行请求-响应匹配，客户端必须在响应中保持与请求相同的 `id`。服务端默认超时 15 秒

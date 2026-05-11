@@ -2,6 +2,25 @@
 
 本文档记录 Live2D Adapter 插件的所有重要更新。
 
+## [1.3.0] - 2026-05-07
+
+### 协议文档与发布说明同步 📝
+
+#### `perform.show` 实际字段补齐
+- 补充 `perform.show.interruptible` 的实际用途，明确其主要用于补发表演包
+- 补充 `expression.combo`、`expression.semantic`、`holdMs`、`resetPolicy` 的真实结构与约束
+- 明确普通回复首包、同事件追加包、补发表演包在 `interrupt` / `interruptible` 上的当前行为
+
+#### `state.model` 实际结构补齐
+- 补充 `state.model.capabilities` 的布尔能力声明结构
+- 补充 `expressionCatalog` 的 `aliases`、`tags`、`conflictGroups`、`supportsCombo`
+- 补充 `semanticPresets` 的语义标签映射规则
+- 补充 `discovery` 的 `mode`、`sources`、`companionFiles`、扫描计数与警告摘要
+
+#### 升级提示
+- README 与教程新增桌面端协议升级提示，明确旧版仅支持 `expression.id` 时的兼容退化行为
+- 元数据与发版说明同步到 `1.3.0`
+
 ## [1.2.1] - 2026-03-20
 
 ### 新增功能 ✨

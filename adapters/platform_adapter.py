@@ -35,14 +35,25 @@ except ImportError as e:
 from ..converters.input_converter import InputMessageConverter
 from ..converters.output_converter import OutputMessageConverter
 from ..core.config import ConfigLike
+from ..core.diagnostics import (
+    preview_text,
+    summarize_message_chain,
+    summarize_perform_sequence,
+)
 from ..core.desktop_request import DesktopRequestManager
+from ..core.planner_runtime import (
+    describe_planner_source,
+    resolve_planner_runtime_config,
+)
 from ..core.protocol import BasePacket
 from ..core.protocol import Protocol as ProtocolClass
 from ..server.resource_manager import ResourceManager
 from ..server.resource_server import ResourceServer
 from ..server.unified_server import SinglePortLive2DServer
 from ..server.websocket_server import WebSocketServer
+from ..services.expression_planner_service import ExpressionPlannerService
 from .message_event import Live2DMessageEvent
+from .planner_followup import build_planner_followup_sequence
 
 LIVE2D_CONFIG_METADATA = {
     "ws_host": {
@@ -301,6 +312,8 @@ class Live2DPlatformAdapter(Platform):
                 "resource_path": self.config_obj.resource_path,
             },
         )
+        self.expression_planner = ExpressionPlannerService()
+        self._log_expression_planner_status()
 
         # 当前连接的客户端ID（单一连接约束）
         self.current_client_id: str | None = None
@@ -311,6 +324,18 @@ class Live2DPlatformAdapter(Platform):
         self._registered_tool_names: list[str] = []
 
         logger.info(f"[Live2D] 平台适配器已初始化，ID: {self.config.get('id')}")
+
+    def _log_expression_planner_status(self) -> None:
+        planner_config = resolve_planner_runtime_config()
+        logger.info(
+            "[Live2DPlanner] 规划状态: "
+            f"enabled={planner_config.get('enabled')}, "
+            f"source={describe_planner_source(str(planner_config.get('source', '')))}, "
+            f"mode={planner_config.get('effective_mode')}, "
+            f"provider={planner_config.get('provider_id') or '未配置'}, "
+            f"min_confidence={planner_config.get('min_confidence')}, "
+            f"timeout={planner_config.get('timeout_seconds')}s"
+        )
 
     @staticmethod
     def _mask_token(token: str) -> str:
@@ -783,6 +808,13 @@ class Live2DPlatformAdapter(Platform):
 
             # 转换 MessageChain 为表演序列
             sequence = self.output_converter.convert(message_chain)
+            reply_text = self.output_converter.extract_text_summary(message_chain)
+            logger.debug(
+                "[Live2D] send_by_session 准备转换消息链: "
+                f"components={summarize_message_chain(message_chain)}, "
+                f"reply_len={len(reply_text)}, "
+                f"reply_preview={preview_text(reply_text)}"
+            )
 
             if not sequence:
                 logger.warning("[Live2D] 转换后的表演序列为空，跳过发送")
@@ -796,7 +828,30 @@ class Live2DPlatformAdapter(Platform):
 
             await self.ws_server.send_to(target_client_id, packet)
 
-            logger.info(f"[Live2D] 已发送表演序列，包含 {len(sequence)} 个元素")
+            logger.info(
+                "[Live2D] 已发送表演序列: "
+                f"client_id={target_client_id}, sequence={summarize_perform_sequence(sequence)}"
+            )
+            followup_sequence = await build_planner_followup_sequence(
+                expression_planner=self.expression_planner,
+                output_converter=self.output_converter,
+                message_chain=message_chain,
+                sequence=sequence,
+                client_model_info=client_model_info,
+                reset_policy="previous",
+                reply_text=reply_text,
+            )
+            if followup_sequence:
+                followup_packet = ProtocolClass.create_perform_show(
+                    sequence=followup_sequence,
+                    interrupt=False,
+                    interruptible=True,
+                )
+                await self.ws_server.send_to(target_client_id, followup_packet)
+                logger.info(
+                    "[Live2DPlanner] send_by_session 已补发表演: "
+                    f"sequence={summarize_perform_sequence(followup_sequence)}"
+                )
 
         except Exception as e:
             logger.error(f"[Live2D] 发送消息失败: {e}", exc_info=True)
