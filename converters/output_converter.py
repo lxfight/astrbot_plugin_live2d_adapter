@@ -445,8 +445,6 @@ class OutputMessageConverter:
             return None
 
         if combo:
-            if not combo:
-                return None
             expression_id = None
         elif expression_id is not None:
             expression_id = self._resolve_expression_id(expression_id)
