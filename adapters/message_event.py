@@ -22,6 +22,10 @@ from ..core.diagnostics import (
 from ..core.protocol import BasePacket
 from ..core.protocol import Protocol as ProtocolClass
 from ..services.expression_planner_service import ExpressionPlannerService
+from .planner_followup import (
+    build_planner_followup_sequence,
+    extract_planner_reply_text,
+)
 
 
 class Live2DMessageEvent(AstrMessageEvent):
@@ -79,30 +83,24 @@ class Live2DMessageEvent(AstrMessageEvent):
         return model_info if isinstance(model_info, dict) else {}
 
     def _extract_reply_text(self, message: MessageChain | None) -> str:
-        return self.output_converter.extract_text_summary(message)
-
-    @staticmethod
-    def _has_explicit_perform_controls(sequence: list[dict[str, Any]]) -> bool:
-        return any(
-            isinstance(element, dict) and element.get("type") in {"motion", "expression"}
-            for element in sequence
-        )
+        return extract_planner_reply_text(self.output_converter, message)
 
     async def _send_planner_followup(
-        self, reply_text: str, reset_policy: str
+        self,
+        message: MessageChain | None,
+        sequence: list[dict[str, Any]],
+        reset_policy: str,
+        reply_text: str | None = None,
     ) -> None:
-        normalized_reply = str(reply_text or "").strip()
-        if not normalized_reply or not self.expression_planner.is_enabled():
-            return
-
         client_model_info = self._get_client_model_info()
-        if not client_model_info:
-            return
-
-        followup_sequence = await self.expression_planner.build_followup_sequence(
-            normalized_reply,
-            client_model_info,
+        followup_sequence = await build_planner_followup_sequence(
+            expression_planner=self.expression_planner,
+            output_converter=self.output_converter,
+            message_chain=message,
+            sequence=sequence,
+            client_model_info=client_model_info,
             reset_policy=reset_policy,
+            reply_text=reply_text,
         )
         if not followup_sequence:
             return
@@ -171,8 +169,12 @@ class Live2DMessageEvent(AstrMessageEvent):
                 f"interrupt={should_interrupt}, sequence={summarize_perform_sequence(sequence)}"
             )
 
-            if not self._has_explicit_perform_controls(sequence):
-                await self._send_planner_followup(reply_text, reset_policy="previous")
+            await self._send_planner_followup(
+                message,
+                sequence,
+                reset_policy="previous",
+                reply_text=reply_text,
+            )
 
         except Exception as e:
             logger.error(f"[Live2D] 发送消息失败: {e}", exc_info=True)
@@ -244,8 +246,14 @@ class Live2DMessageEvent(AstrMessageEvent):
                     await self._send_to_client(packet)
 
             if full_components:
-                reply_text = self._extract_reply_text(MessageChain(chain=full_components))
-                await self._send_planner_followup(reply_text, reset_policy="keep")
+                message = MessageChain(chain=full_components)
+                reply_text = self._extract_reply_text(message)
+                await self._send_planner_followup(
+                    message,
+                    [],
+                    reset_policy="keep",
+                    reply_text=reply_text,
+                )
 
             logger.info("[Live2D] 流式消息发送完成")
 

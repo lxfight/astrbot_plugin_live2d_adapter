@@ -53,6 +53,7 @@ from ..server.unified_server import SinglePortLive2DServer
 from ..server.websocket_server import WebSocketServer
 from ..services.expression_planner_service import ExpressionPlannerService
 from .message_event import Live2DMessageEvent
+from .planner_followup import build_planner_followup_sequence
 
 LIVE2D_CONFIG_METADATA = {
     "ws_host": {
@@ -831,33 +832,26 @@ class Live2DPlatformAdapter(Platform):
                 "[Live2D] 已发送表演序列: "
                 f"client_id={target_client_id}, sequence={summarize_perform_sequence(sequence)}"
             )
-            if (
-                self.expression_planner.is_enabled()
-                and isinstance(client_model_info, dict)
-                and client_model_info
-                and reply_text
-                and not any(
-                    isinstance(element, dict)
-                    and element.get("type") in {"motion", "expression"}
-                    for element in sequence
+            followup_sequence = await build_planner_followup_sequence(
+                expression_planner=self.expression_planner,
+                output_converter=self.output_converter,
+                message_chain=message_chain,
+                sequence=sequence,
+                client_model_info=client_model_info,
+                reset_policy="previous",
+                reply_text=reply_text,
+            )
+            if followup_sequence:
+                followup_packet = ProtocolClass.create_perform_show(
+                    sequence=followup_sequence,
+                    interrupt=False,
+                    interruptible=True,
                 )
-            ):
-                followup_sequence = await self.expression_planner.build_followup_sequence(
-                    reply_text,
-                    client_model_info,
-                    reset_policy="previous",
+                await self.ws_server.send_to(target_client_id, followup_packet)
+                logger.info(
+                    "[Live2DPlanner] send_by_session 已补发表演: "
+                    f"sequence={summarize_perform_sequence(followup_sequence)}"
                 )
-                if followup_sequence:
-                    followup_packet = ProtocolClass.create_perform_show(
-                        sequence=followup_sequence,
-                        interrupt=False,
-                        interruptible=True,
-                    )
-                    await self.ws_server.send_to(target_client_id, followup_packet)
-                    logger.info(
-                        "[Live2DPlanner] send_by_session 已补发表演: "
-                        f"sequence={summarize_perform_sequence(followup_sequence)}"
-                    )
 
         except Exception as e:
             logger.error(f"[Live2D] 发送消息失败: {e}", exc_info=True)
