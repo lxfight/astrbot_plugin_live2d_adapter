@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
+from threading import RLock
 
 from astrbot.api import logger
 from astrbot.api.message_components import File, Image, Plain, Record, Video
@@ -50,6 +51,7 @@ class InputMessageConverter:
         self.temp_max_total_bytes = int(temp_max_total_bytes or 0) or None
         self.temp_max_files = int(temp_max_files or 0) or None
         self.resource_manager = resource_manager
+        self._lock = RLock()
 
     def get_temp_files_info(self) -> dict:
         """获取临时文件信息
@@ -57,21 +59,22 @@ class InputMessageConverter:
         Returns:
             包含临时文件数量和总字节数的字典
         """
-        temp_root = Path(self.temp_dir)
-        if not temp_root.exists():
-            return {"count": 0, "total_bytes": 0}
-        count = 0
-        total_bytes = 0
-        for p in temp_root.iterdir():
-            if not p.is_file():
-                continue
-            if any(p.name.startswith(pfx) for pfx in self._TEMP_FILE_PREFIXES):
-                try:
-                    total_bytes += p.stat().st_size
-                    count += 1
-                except OSError:
+        with self._lock:
+            temp_root = Path(self.temp_dir)
+            if not temp_root.exists():
+                return {"count": 0, "total_bytes": 0}
+            count = 0
+            total_bytes = 0
+            for p in temp_root.iterdir():
+                if not p.is_file():
                     continue
-        return {"count": count, "total_bytes": total_bytes}
+                if any(p.name.startswith(pfx) for pfx in self._TEMP_FILE_PREFIXES):
+                    try:
+                        total_bytes += p.stat().st_size
+                        count += 1
+                    except OSError:
+                        continue
+            return {"count": count, "total_bytes": total_bytes}
 
     def convert(self, content: list[dict[str, Any]]) -> tuple[list, str]:
         """
@@ -147,99 +150,100 @@ class InputMessageConverter:
         Reserve params are used when writing a new temp file, ensuring enough room
         after cleanup.
         """
-        removed = 0
-        removed_bytes = 0
+        with self._lock:
+            removed = 0
+            removed_bytes = 0
 
-        if (
-            self.temp_max_total_bytes is not None
-            and reserve_bytes > self.temp_max_total_bytes
-        ):
-            raise ValueError("Temp quota too small for the incoming payload.")
-        if self.temp_max_files is not None and reserve_files > self.temp_max_files:
-            raise ValueError("Temp file quota too small for the incoming payload.")
+            if (
+                self.temp_max_total_bytes is not None
+                and reserve_bytes > self.temp_max_total_bytes
+            ):
+                raise ValueError("Temp quota too small for the incoming payload.")
+            if self.temp_max_files is not None and reserve_files > self.temp_max_files:
+                raise ValueError("Temp file quota too small for the incoming payload.")
 
-        temp_root = Path(self.temp_dir)
-        if not temp_root.exists():
-            return {"removed": 0, "removed_bytes": 0}
+            temp_root = Path(self.temp_dir)
+            if not temp_root.exists():
+                return {"removed": 0, "removed_bytes": 0}
 
-        def is_owned(p: Path) -> bool:
-            name = p.name
-            return any(name.startswith(prefix) for prefix in self._TEMP_FILE_PREFIXES)
+            def is_owned(p: Path) -> bool:
+                name = p.name
+                return any(name.startswith(prefix) for prefix in self._TEMP_FILE_PREFIXES)
 
-        files: list[Path] = []
-        for p in temp_root.iterdir():
-            if not p.is_file():
-                continue
-            if is_owned(p):
-                files.append(p)
+            files: list[Path] = []
+            for p in temp_root.iterdir():
+                if not p.is_file():
+                    continue
+                if is_owned(p):
+                    files.append(p)
 
-        # TTL cleanup (based on mtime)
-        if self.temp_ttl_seconds:
-            now = time.time()
-            for p in list(files):
+            # TTL cleanup (based on mtime)
+            if self.temp_ttl_seconds:
+                now = time.time()
+                for p in list(files):
+                    try:
+                        mtime = p.stat().st_mtime
+                        if (now - mtime) > self.temp_ttl_seconds:
+                            size = p.stat().st_size
+                            p.unlink(missing_ok=True)
+                            removed += 1
+                            removed_bytes += size
+                            files.remove(p)
+                    except OSError:
+                        continue
+
+            # Quota cleanup
+            max_files = (
+                max(self.temp_max_files - reserve_files, 0)
+                if self.temp_max_files is not None
+                else None
+            )
+            max_bytes = (
+                max(self.temp_max_total_bytes - reserve_bytes, 0)
+                if self.temp_max_total_bytes is not None
+                else None
+            )
+
+            def safe_mtime(p: Path) -> float:
                 try:
-                    mtime = p.stat().st_mtime
-                    if (now - mtime) > self.temp_ttl_seconds:
+                    return p.stat().st_mtime
+                except OSError:
+                    return 0.0
+
+            files.sort(key=safe_mtime)
+
+            def total_bytes() -> int:
+                total = 0
+                for p in files:
+                    try:
+                        total += p.stat().st_size
+                    except OSError:
+                        continue
+                return total
+
+            if max_files is not None:
+                while len(files) > max_files:
+                    p = files.pop(0)
+                    try:
                         size = p.stat().st_size
                         p.unlink(missing_ok=True)
                         removed += 1
                         removed_bytes += size
-                        files.remove(p)
-                except OSError:
-                    continue
+                    except OSError:
+                        continue
 
-        # Quota cleanup
-        max_files = (
-            max(self.temp_max_files - reserve_files, 0)
-            if self.temp_max_files is not None
-            else None
-        )
-        max_bytes = (
-            max(self.temp_max_total_bytes - reserve_bytes, 0)
-            if self.temp_max_total_bytes is not None
-            else None
-        )
+            if max_bytes is not None:
+                while files and total_bytes() > max_bytes:
+                    p = files.pop(0)
+                    try:
+                        size = p.stat().st_size
+                        p.unlink(missing_ok=True)
+                        removed += 1
+                        removed_bytes += size
+                    except OSError:
+                        continue
 
-        def safe_mtime(p: Path) -> float:
-            try:
-                return p.stat().st_mtime
-            except OSError:
-                return 0.0
-
-        files.sort(key=safe_mtime)
-
-        def total_bytes() -> int:
-            total = 0
-            for p in files:
-                try:
-                    total += p.stat().st_size
-                except OSError:
-                    continue
-            return total
-
-        if max_files is not None:
-            while len(files) > max_files:
-                p = files.pop(0)
-                try:
-                    size = p.stat().st_size
-                    p.unlink(missing_ok=True)
-                    removed += 1
-                    removed_bytes += size
-                except OSError:
-                    continue
-
-        if max_bytes is not None:
-            while files and total_bytes() > max_bytes:
-                p = files.pop(0)
-                try:
-                    size = p.stat().st_size
-                    p.unlink(missing_ok=True)
-                    removed += 1
-                    removed_bytes += size
-                except OSError:
-                    continue
-
-        return {"removed": removed, "removed_bytes": removed_bytes}
+            return {"removed": removed, "removed_bytes": removed_bytes}
 
     def _reserve_temp_space(self, size: int) -> bool:
         try:
@@ -252,11 +256,12 @@ class InputMessageConverter:
     def _write_temp_bytes(
         self, data: bytes, prefix: str, suffix: str = ""
     ) -> str | None:
-        if not self._reserve_temp_space(len(data)):
-            return None
-        temp_path = Path(self.temp_dir) / f"{prefix}{os.urandom(8).hex()}{suffix}"
-        temp_path.write_bytes(data)
-        return str(temp_path.resolve())
+        with self._lock:
+            if not self._reserve_temp_space(len(data)):
+                return None
+            temp_path = Path(self.temp_dir) / f"{prefix}{os.urandom(8).hex()}{suffix}"
+            temp_path.write_bytes(data)
+            return str(temp_path.resolve())
 
     def _resolve_file_url(self, file_url: str) -> Path | None:
         if not isinstance(file_url, str) or not file_url.startswith("file:///"):
@@ -270,18 +275,21 @@ class InputMessageConverter:
         return path
 
     def copy_local_file_to_temp(self, source: str | Path, prefix: str) -> str | None:
-        path: Path | None
-        if isinstance(source, Path):
-            path = source
-        else:
-            path = self._resolve_file_url(source) or Path(source)
-        if not path.exists() or not path.is_file():
-            return None
-        if not self._reserve_temp_space(path.stat().st_size):
-            return None
-        temp_path = Path(self.temp_dir) / f"{prefix}{os.urandom(8).hex()}{path.suffix}"
-        shutil.copy2(path, temp_path)
-        return str(temp_path.resolve())
+        with self._lock:
+            path: Path | None
+            if isinstance(source, Path):
+                path = source
+            else:
+                path = self._resolve_file_url(source) or Path(source)
+            if not path.exists() or not path.is_file():
+                return None
+            if not self._reserve_temp_space(path.stat().st_size):
+                return None
+            temp_path = (
+                Path(self.temp_dir) / f"{prefix}{os.urandom(8).hex()}{path.suffix}"
+            )
+            shutil.copy2(path, temp_path)
+            return str(temp_path.resolve())
 
     def convert_image(self, item: dict[str, Any]) -> Any | None:
         """将图片描述字典转换为 AstrBot Image 组件

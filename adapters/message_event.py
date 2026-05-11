@@ -1,5 +1,6 @@
 """Live2D 消息事件 - 处理消息发送到 Live2D 客户端"""
 
+import asyncio
 from collections.abc import AsyncGenerator
 from time import monotonic
 from typing import Any
@@ -143,7 +144,9 @@ class Live2DMessageEvent(AstrMessageEvent):
             )
 
             # 转换 MessageChain 为表演序列
-            sequence = self.output_converter.convert(message, tts_url=tts_url)
+            sequence = await asyncio.to_thread(
+                self.output_converter.convert, message, tts_url=tts_url
+            )
 
             if not sequence:
                 logger.warning("[Live2D] 转换后的表演序列为空")
@@ -226,7 +229,9 @@ class Live2DMessageEvent(AstrMessageEvent):
                         if len(buffer) >= 10 or any(
                             p in buffer for p in ["。", "！", "？", "\n"]
                         ):
-                            sequence = self.output_converter.convert_streaming(buffer)
+                            sequence = await asyncio.to_thread(
+                                self.output_converter.convert_streaming, buffer
+                            )
                             if sequence:
                                 packet = ProtocolClass.create_perform_show(
                                     sequence=sequence,
@@ -238,7 +243,9 @@ class Live2DMessageEvent(AstrMessageEvent):
 
             # 发送剩余缓冲区内容
             if buffer:
-                sequence = self.output_converter.convert_streaming(buffer)
+                sequence = await asyncio.to_thread(
+                    self.output_converter.convert_streaming, buffer
+                )
                 if sequence:
                     packet = ProtocolClass.create_perform_show(
                         sequence=sequence, interrupt=False

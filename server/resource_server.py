@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 
+import aiofiles
 from aiohttp import web
 
 from astrbot.api import logger
@@ -65,27 +67,35 @@ class ResourceServer:
         expected = request.content_length
         if expected is not None:
             try:
-                self.manager.cleanup(reserve_bytes=int(expected), reserve_files=0)
+                await asyncio.to_thread(
+                    self.manager.cleanup,
+                    reserve_bytes=int(expected),
+                    reserve_files=0,
+                )
             except ValueError as e:
                 return web.Response(status=413, text=str(e))
 
         sha = hashlib.sha256()
         size = 0
         try:
-            with entry.path.open("wb") as f:
+            async with aiofiles.open(entry.path, "wb") as f:
                 async for chunk in request.content.iter_chunked(1024 * 1024):
                     size += len(chunk)
                     sha.update(chunk)
-                    f.write(chunk)
+                    await f.write(chunk)
         except Exception as e:
             entry.status = "error"
+            try:
+                await asyncio.to_thread(entry.path.unlink, missing_ok=True)
+            except OSError:
+                pass
             return web.Response(status=500, text=f"Write failed: {e!s}")
 
         digest = sha.hexdigest()
         if entry.sha256 and entry.sha256 != digest:
             entry.status = "error"
             try:
-                entry.path.unlink(missing_ok=True)
+                await asyncio.to_thread(entry.path.unlink, missing_ok=True)
             except OSError:
                 pass
             return web.Response(status=400, text="SHA256 mismatch")
@@ -93,9 +103,9 @@ class ResourceServer:
         entry.sha256 = digest
         entry.size = size
         entry.status = "ready"
-        self.manager.commit_upload(rid, size=size)
+        await asyncio.to_thread(self.manager.commit_upload, rid, size=size)
         try:
-            self.manager.cleanup()
+            await asyncio.to_thread(self.manager.cleanup)
         except Exception:
             pass
 
@@ -107,7 +117,7 @@ class ResourceServer:
         rid = request.match_info.get("rid")
         if not rid:
             return web.Response(status=400, text="Missing rid")
-        if not self.manager.release(rid):
+        if not await asyncio.to_thread(self.manager.release, rid):
             return web.Response(status=404, text="Not Found")
         return web.json_response({"rid": rid, "released": True})
 
