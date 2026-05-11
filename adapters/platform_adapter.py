@@ -645,8 +645,10 @@ class Live2DPlatformAdapter(Platform):
             content = payload.get("content", [])
             metadata = payload.get("metadata", {})
 
-            # 使用 InputMessageConverter 转换消息内容
-            message_components, message_str = self.input_converter.convert(content)
+            # 使用线程池转换消息内容，避免阻塞事件循环
+            message_components, message_str = await asyncio.to_thread(
+                self.input_converter.convert, content
+            )
 
             if not message_str and not message_components:
                 logger.warning("[Live2D] 空消息内容，跳过处理")
@@ -803,12 +805,17 @@ class Live2DPlatformAdapter(Platform):
                 )
                 client_model_info = client_state.get("model")
 
-            # 更新转换器的模型信息
-            self.output_converter.client_model_info = client_model_info or {}
+            output_converter = OutputMessageConverter(
+                resource_manager=self.resource_manager,
+                resource_config=dict(self.output_converter.resource_config),
+                client_model_info=client_model_info or {},
+            )
 
             # 转换 MessageChain 为表演序列
-            sequence = self.output_converter.convert(message_chain)
-            reply_text = self.output_converter.extract_text_summary(message_chain)
+            sequence = await asyncio.to_thread(
+                output_converter.convert, message_chain
+            )
+            reply_text = output_converter.extract_text_summary(message_chain)
             logger.debug(
                 "[Live2D] send_by_session 准备转换消息链: "
                 f"components={summarize_message_chain(message_chain)}, "
@@ -1116,14 +1123,16 @@ class Live2DPlatformAdapter(Platform):
                 return None, None
 
         if image_data.startswith("file:///"):
-            staged_file = self.input_converter.copy_local_file_to_temp(
-                image_data, "live2d_img_"
+            staged_file = await asyncio.to_thread(
+                self.input_converter.copy_local_file_to_temp,
+                image_data,
+                "live2d_img_",
             )
             if not staged_file:
                 return None, None
             p = Path(staged_file)
             if p.exists() and p.is_file():
-                data = p.read_bytes()
+                data = await asyncio.to_thread(p.read_bytes)
                 mime_type, _ = mimetypes.guess_type(str(p))
                 if not mime_type or not mime_type.startswith("image/"):
                     mime_type = "image/jpeg"
@@ -1155,9 +1164,13 @@ class Live2DPlatformAdapter(Platform):
 
         if image_data and event:
             if image_data.startswith(("http://", "https://")):
-                image_comp = self.input_converter.convert_image({"url": image_data})
+                image_comp = await asyncio.to_thread(
+                    self.input_converter.convert_image, {"url": image_data}
+                )
             else:
-                image_comp = self.input_converter.convert_image({"data": image_data})
+                image_comp = await asyncio.to_thread(
+                    self.input_converter.convert_image, {"data": image_data}
+                )
             if image_comp:
                 event.message_obj.message.append(image_comp)
                 return (
@@ -1197,7 +1210,10 @@ class Live2DPlatformAdapter(Platform):
         if interval < 10:
             interval = 10
 
-        self._run_cleanup()
+        try:
+            await asyncio.to_thread(self._run_cleanup)
+        except Exception as e:
+            logger.debug(f"[Live2D] 首次清理失败: {e!s}")
 
         while not self._stop_event.is_set():
             try:
@@ -1206,7 +1222,10 @@ class Live2DPlatformAdapter(Platform):
                 pass
             if self._stop_event.is_set():
                 break
-            self._run_cleanup()
+            try:
+                await asyncio.to_thread(self._run_cleanup)
+            except Exception as e:
+                logger.debug(f"[Live2D] 周期清理失败: {e!s}")
 
     async def terminate(self):
         """终止平台适配器运行"""

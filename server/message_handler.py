@@ -1,5 +1,6 @@
 """消息处理器"""
 
+import asyncio
 import hmac
 import time
 from collections.abc import Callable
@@ -380,8 +381,12 @@ class MessageHandler:
         size = int(payload.get("size", 0) or 0)
         sha256 = payload.get("sha256")
         try:
-            entry = self.resource_manager.prepare_upload(
-                kind, mime, size=size, sha256=sha256
+            entry = await asyncio.to_thread(
+                self.resource_manager.prepare_upload,
+                kind,
+                mime,
+                size=size,
+                sha256=sha256,
             )
         except ValueError as e:
             return ProtocolClass.create_error_packet(
@@ -465,7 +470,7 @@ class MessageHandler:
             )
         payload = packet.payload or {}
         rid = payload.get("rid")
-        if not self.resource_manager.release(rid):
+        if not await asyncio.to_thread(self.resource_manager.release, rid):
             return ProtocolClass.create_error_packet(
                 ProtocolClass.ERROR_RESOURCE_NOT_FOUND, "资源不存在", packet.id
             )

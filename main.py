@@ -1,5 +1,6 @@
 """AstrBot Live2D Adapter - AstrBot 插件入口"""
 
+import asyncio
 import time
 
 from astrbot.api import logger
@@ -157,7 +158,9 @@ class Live2DAdapter(Star):
             if adapter.input_converter and hasattr(
                 adapter.input_converter, "get_temp_files_info"
             ):
-                temp_info_data = adapter.input_converter.get_temp_files_info()
+                temp_info_data = await asyncio.to_thread(
+                    adapter.input_converter.get_temp_files_info
+                )
                 temp_files = temp_info_data["count"]
                 temp_bytes = temp_info_data["total_bytes"]
                 max_temp_files = getattr(adapter.input_converter, "temp_max_files", 1)
@@ -369,9 +372,8 @@ class Live2DAdapter(Star):
             # 清理资源
             if adapter.resource_manager:
                 before = len(adapter.resource_manager.resources)
-                # ResourceManager 只有 cleanup 方法
                 if hasattr(adapter.resource_manager, "cleanup"):
-                    adapter.resource_manager.cleanup()  # type: ignore[attr-defined]
+                    await asyncio.to_thread(adapter.resource_manager.cleanup)  # type: ignore[attr-defined]
                 after = len(adapter.resource_manager.resources)
                 cleaned_resources = before - after
 
@@ -379,9 +381,13 @@ class Live2DAdapter(Star):
             if adapter.input_converter and hasattr(
                 adapter.input_converter, "get_temp_files_info"
             ):
-                before_info = adapter.input_converter.get_temp_files_info()
-                adapter.input_converter.cleanup_temp_files()
-                after_info = adapter.input_converter.get_temp_files_info()
+                before_info = await asyncio.to_thread(
+                    adapter.input_converter.get_temp_files_info
+                )
+                await asyncio.to_thread(adapter.input_converter.cleanup_temp_files)
+                after_info = await asyncio.to_thread(
+                    adapter.input_converter.get_temp_files_info
+                )
                 cleaned_temp = before_info["count"] - after_info["count"]
 
             cleanup_msg = f"""[Live2D Adapter] 清理完成

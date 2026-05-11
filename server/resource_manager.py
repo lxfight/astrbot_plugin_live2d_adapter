@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
+from threading import RLock
 
 
 @dataclass
@@ -52,6 +53,7 @@ class ResourceManager:
         self.max_total_bytes = int(max_total_bytes or 0) or None
         self.max_total_files = int(max_total_files or 0) or None
         self.resources: dict[str, ResourceEntry] = {}
+        self._lock = RLock()
 
     def _now(self) -> int:
         return int(time.time() * 1000)
@@ -114,18 +116,14 @@ class ResourceManager:
         The cleanup is based on filesystem mtime so it also works across restarts.
         Reserve params are used when storing a new resource (make room first).
         """
-        removed = 0
-        removed_bytes = 0
-
         if self.max_total_bytes is not None and reserve_bytes > self.max_total_bytes:
             raise ValueError("Resource quota too small for the incoming payload.")
         if self.max_total_files is not None and reserve_files > self.max_total_files:
             raise ValueError("Resource file quota too small for the incoming payload.")
 
-        # Drop stale metadata entries whose files are missing.
-        for rid, entry in list(self.resources.items()):
-            if entry.path and entry.status == "ready" and not entry.path.exists():
-                self.resources.pop(rid, None)
+        removed = 0
+        removed_bytes = 0
+        deleted_stems: set[str] = set()
 
         files: list[tuple[float, int, Path]] = []
         for p in self.storage_dir.iterdir():
@@ -140,6 +138,18 @@ class ResourceManager:
         files.sort(key=lambda x: x[0])
 
         now_ms = self._now()
+
+        def unlink_path(path: Path, size: int) -> bool:
+            nonlocal removed, removed_bytes
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                return False
+            removed += 1
+            removed_bytes += size
+            deleted_stems.add(path.stem)
+            return True
+
         if self.ttl_ms:
             kept: list[tuple[float, int, Path]] = []
             for mtime, size, path in files:
@@ -147,14 +157,8 @@ class ResourceManager:
                 if age_ms <= self.ttl_ms:
                     kept.append((mtime, size, path))
                     continue
-                try:
-                    path.unlink(missing_ok=True)
-                    removed += 1
-                    removed_bytes += size
-                except OSError:
+                if not unlink_path(path, size):
                     kept.append((mtime, size, path))
-                    continue
-                self.resources.pop(path.stem, None)
             files = kept
 
         max_files = (
@@ -174,28 +178,31 @@ class ResourceManager:
         if max_files is not None:
             while len(files) > max_files:
                 mtime, size, path = files.pop(0)
-                try:
-                    path.unlink(missing_ok=True)
-                    removed += 1
-                    removed_bytes += size
-                except OSError:
+                if not unlink_path(path, size):
                     files.append((mtime, size, path))
                     files.sort(key=lambda x: x[0])
                     break
-                self.resources.pop(path.stem, None)
 
         if max_bytes is not None:
             while files and total_bytes() > max_bytes:
                 mtime, size, path = files.pop(0)
-                try:
-                    path.unlink(missing_ok=True)
-                    removed += 1
-                    removed_bytes += size
-                except OSError:
+                if not unlink_path(path, size):
                     files.append((mtime, size, path))
                     files.sort(key=lambda x: x[0])
                     break
-                self.resources.pop(path.stem, None)
+
+        remaining_stems = {path.stem for _, _, path in files}
+
+        with self._lock:
+            for rid, entry in list(self.resources.items()):
+                path = entry.path
+                if not path:
+                    continue
+                stem = path.stem
+                if stem in deleted_stems:
+                    self.resources.pop(rid, None)
+                elif entry.status == "ready" and stem not in remaining_stems:
+                    self.resources.pop(rid, None)
 
         return {"removed": removed, "removed_bytes": removed_bytes}
 
@@ -216,17 +223,19 @@ class ResourceManager:
             status="pending",
             created_at=self._now(),
         )
-        self.resources[rid] = entry
+        with self._lock:
+            self.resources[rid] = entry
         return entry
 
     def commit_upload(self, rid: str, size: int | None = None) -> ResourceEntry | None:
-        entry = self.resources.get(rid)
-        if not entry:
-            return None
-        if size is not None:
-            entry.size = size
-        entry.status = "ready"
-        return entry
+        with self._lock:
+            entry = self.resources.get(rid)
+            if not entry:
+                return None
+            if size is not None:
+                entry.size = size
+            entry.status = "ready"
+            return entry
 
     def register_file(
         self, file_path: str, kind: str, mime: str | None = None
@@ -258,7 +267,8 @@ class ResourceManager:
             status="ready",
             created_at=self._now(),
         )
-        self.resources[rid] = entry
+        with self._lock:
+            self.resources[rid] = entry
         return entry
 
     def build_reference_from_file(
@@ -327,7 +337,8 @@ class ResourceManager:
             status="ready",
             created_at=self._now(),
         )
-        self.resources[rid] = entry
+        with self._lock:
+            self.resources[rid] = entry
         return {
             "rid": entry.rid,
             "url": self.build_url(
@@ -342,7 +353,8 @@ class ResourceManager:
         }
 
     def get_resource(self, rid: str) -> ResourceEntry | None:
-        return self.resources.get(rid)
+        with self._lock:
+            return self.resources.get(rid)
 
     def get_resource_payload(
         self,
@@ -352,19 +364,26 @@ class ResourceManager:
         resource_path: str | None = None,
         token: str | None = None,
     ) -> dict[str, Any] | None:
-        entry = self.get_resource(rid)
-        if not entry:
-            return None
+        with self._lock:
+            entry = self.resources.get(rid)
+            if not entry:
+                return None
+            entry_rid = entry.rid
+            entry_kind = entry.kind
+            entry_mime = entry.mime
+            entry_size = entry.size
+            entry_sha256 = entry.sha256
+            is_ready = entry.status == "ready"
         payload = {
-            "rid": entry.rid,
-            "kind": entry.kind,
-            "mime": entry.mime,
-            "size": entry.size,
-            "sha256": entry.sha256,
+            "rid": entry_rid,
+            "kind": entry_kind,
+            "mime": entry_mime,
+            "size": entry_size,
+            "sha256": entry_sha256,
         }
-        if entry.status == "ready":
+        if is_ready:
             payload["url"] = self.build_url(
-                entry.rid,
+                entry_rid,
                 base_url=base_url,
                 resource_path=resource_path,
                 token=token,
@@ -372,19 +391,23 @@ class ResourceManager:
         return payload
 
     def get_resource_path(self, rid: str) -> Path | None:
-        entry = self.get_resource(rid)
-        if not entry:
-            return None
-        return entry.path
+        with self._lock:
+            entry = self.resources.get(rid)
+            if not entry:
+                return None
+            return entry.path
 
     def release(self, rid: str) -> bool:
-        entry = self.resources.pop(rid, None)
+        with self._lock:
+            entry = self.resources.pop(rid, None)
         if not entry:
             return False
         if entry.path and entry.path.exists():
             try:
                 entry.path.unlink()
             except OSError:
+                with self._lock:
+                    self.resources[rid] = entry
                 return False
         return True
 
