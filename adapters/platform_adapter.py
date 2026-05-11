@@ -1210,7 +1210,10 @@ class Live2DPlatformAdapter(Platform):
         if interval < 10:
             interval = 10
 
-        await asyncio.to_thread(self._run_cleanup)
+        try:
+            await asyncio.to_thread(self._run_cleanup)
+        except Exception as e:
+            logger.debug(f"[Live2D] 首次清理失败: {e!s}")
 
         while not self._stop_event.is_set():
             try:
@@ -1219,7 +1222,10 @@ class Live2DPlatformAdapter(Platform):
                 pass
             if self._stop_event.is_set():
                 break
-            await asyncio.to_thread(self._run_cleanup)
+            try:
+                await asyncio.to_thread(self._run_cleanup)
+            except Exception as e:
+                logger.debug(f"[Live2D] 周期清理失败: {e!s}")
 
     async def terminate(self):
         """终止平台适配器运行"""
