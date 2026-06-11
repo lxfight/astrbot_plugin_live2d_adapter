@@ -2,6 +2,41 @@
 
 本文档记录 Live2D Adapter 插件的所有重要更新。
 
+## [1.3.1] - 2026-06-10
+
+### 🎯 优化重构
+
+**配置精简（26 项 → 13 项）**
+- 移除冗余配置项：`single_port_mode`、`resource_host`、`resource_port`、`resource_path`、`resource_base_url`、`resource_token`、`resource_max_inline_bytes`、`resource_max_total_bytes`、`resource_max_files`、`temp_max_total_bytes`、`temp_max_files`、`cleanup_interval_seconds`
+- 单端口模式固定启用，资源服务自动复用 WebSocket 端口
+- 内部参数使用合理固定默认值（512KB inline、1GB 存储、5分钟清理间隔等）
+- 配置界面更简洁，用户只需关注核心配置
+
+**协议精简（40+ 项 → 27 项）**
+- 移除未使用的桌面控制指令：`desktop.window.show/hide/move/resize/setOpacity/setTopmost/setClickThrough`、`desktop.tray.notify`、`desktop.openUrl`
+- 移除桌面端内部管理的模型指令：`model.list/load/unload/state/setExpression/playMotion/setParameter/lookAt/speak/stop`
+- 保留核心协议分层：
+  - 系统层(5)：handshake / ping / error
+  - 输入层(3)：message / touch / shortcut
+  - 表演层(2)：perform.show / interrupt
+  - 状态层(4)：ready / playing / config / model
+  - 资源层(5)：prepare / commit / get / release / progress
+  - 桌面感知层(4)：tool.call / window.list / window.active / capture.screenshot
+  - STT层(2)：transcribe / result
+- 桌面感知使用 RPC 模式：`desktop.tool.call` 统一入口，支持动态工具声明
+
+**文档更新**
+- 更新 README.md 配置示例，突出精简后的配置
+- 明确桌面感知 RPC 的设计意图和应用场景
+- 补充协议分层说明
+
+### ⚠️ 兼容性说明
+
+- **向后兼容**：现有配置文件无需修改即可升级
+- 移除的配置项会被忽略或使用固定默认值
+- 移除的协议指令桌面端未使用，不影响现有功能
+- 内部实现保持 `ConfigLike` 接口完整，确保代码无需改动
+
 ## [1.3.0] - 2026-05-11
 
 ### 协议文档与发布说明同步 📝

@@ -76,63 +76,44 @@ class BasePacket:
 class Protocol:
     """协议辅助类 - L2D-Bridge Protocol v1.0"""
 
-    # 系统级指令
+    # 系统层
     OP_HANDSHAKE = "sys.handshake"
     OP_HANDSHAKE_ACK = "sys.handshake_ack"
     OP_PING = "sys.ping"
     OP_PONG = "sys.pong"
     OP_ERROR = "sys.error"
 
-    # 用户输入指令
+    # 输入层
     OP_INPUT_MESSAGE = "input.message"
     OP_INPUT_TOUCH = "input.touch"
     OP_INPUT_SHORTCUT = "input.shortcut"
 
-    # 表演控制指令
+    # 表演层
     OP_PERFORM_SHOW = "perform.show"
     OP_PERFORM_INTERRUPT = "perform.interrupt"
 
-    # 状态同步指令
+    # 状态层
     OP_STATE_READY = "state.ready"
     OP_STATE_PLAYING = "state.playing"
     OP_STATE_CONFIG = "state.config"
     OP_STATE_MODEL = "state.model"
+
+    # 资源层
     OP_RESOURCE_PREPARE = "resource.prepare"
     OP_RESOURCE_COMMIT = "resource.commit"
     OP_RESOURCE_GET = "resource.get"
     OP_RESOURCE_RELEASE = "resource.release"
     OP_RESOURCE_PROGRESS = "resource.progress"
 
-    # 模型控制指令
-    OP_MODEL_LIST = "model.list"
-    OP_MODEL_LOAD = "model.load"
-    OP_MODEL_UNLOAD = "model.unload"
-    OP_MODEL_STATE = "model.state"
-    OP_MODEL_SET_EXPRESSION = "model.setExpression"
-    OP_MODEL_PLAY_MOTION = "model.playMotion"
-    OP_MODEL_SET_PARAMETER = "model.setParameter"
-    OP_MODEL_LOOK_AT = "model.lookAt"
-    OP_MODEL_SPEAK = "model.speak"
-    OP_MODEL_STOP = "model.stop"
-
-    # 桌面感知指令
+    # 桌面感知层（RPC）
+    OP_DESKTOP_TOOL_CALL = "desktop.tool.call"
     OP_DESKTOP_WINDOW_LIST = "desktop.window.list"
     OP_DESKTOP_WINDOW_ACTIVE = "desktop.window.active"
-
-    # 桌面工具调用
-    OP_DESKTOP_TOOL_CALL = "desktop.tool.call"
-
-    # 桌面控制指令
-    OP_DESKTOP_WINDOW_SHOW = "desktop.window.show"
-    OP_DESKTOP_WINDOW_HIDE = "desktop.window.hide"
-    OP_DESKTOP_WINDOW_MOVE = "desktop.window.move"
-    OP_DESKTOP_WINDOW_RESIZE = "desktop.window.resize"
-    OP_DESKTOP_WINDOW_SET_OPACITY = "desktop.window.setOpacity"
-    OP_DESKTOP_WINDOW_SET_TOPMOST = "desktop.window.setTopmost"
-    OP_DESKTOP_WINDOW_SET_CLICK_THROUGH = "desktop.window.setClickThrough"
-    OP_DESKTOP_TRAY_NOTIFY = "desktop.tray.notify"
-    OP_DESKTOP_OPEN_URL = "desktop.openUrl"
     OP_DESKTOP_CAPTURE_SCREENSHOT = "desktop.capture.screenshot"
+
+    # STT 层
+    OP_STT_TRANSCRIBE = "stt.transcribe"
+    OP_STT_RESULT = "stt.result"
 
     # 错误码 - 系统错误
     ERROR_AUTH_FAILED = 4001
@@ -148,6 +129,7 @@ class Protocol:
     ERROR_PERFORM_FAILED = 5003
     ERROR_UNSUPPORTED_TYPE = 5004
     ERROR_FILE_UPLOAD_FAILED = 5005
+    ERROR_RESOURCE_IO = 5006
     ERROR_RESOURCE_IO = 5006
 
     @staticmethod

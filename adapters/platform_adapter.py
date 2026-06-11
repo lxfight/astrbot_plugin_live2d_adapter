@@ -91,95 +91,35 @@ LIVE2D_CONFIG_METADATA = {
         "type": "bool",
         "hint": "是否启用流式消息推送，默认 true",
     },
-    "single_port_mode": {
-        "description": "单端口模式",
-        "type": "bool",
-        "hint": "是否在同一端口复用 WebSocket 与资源接口，默认 true",
-    },
     "public_origin": {
         "description": "公网访问入口",
         "type": "string",
-        "hint": "可选，留空时自动根据客户端连接地址推导资源入口，如 https://example.com:9090",
+        "hint": "可选，留空时自动推导。仅云部署需要，如 https://example.com:9090",
     },
     "resource_enabled": {
         "description": "启用资源服务",
         "type": "bool",
         "hint": "是否启用资源服务器，默认 true",
     },
-    "resource_host": {
-        "description": "资源服务监听地址",
-        "type": "string",
-        "hint": "兼容旧双端口模式，单端口模式下默认复用 ws_host",
-    },
-    "resource_port": {
-        "description": "资源服务端口",
-        "type": "int",
-        "hint": "兼容旧双端口模式，单端口模式下默认复用 ws_port",
-    },
-    "resource_path": {
-        "description": "资源访问路径",
-        "type": "string",
-        "hint": "资源访问路径，默认 /resources",
-    },
     "resource_dir": {
         "description": "资源存储目录",
         "type": "string",
-        "hint": "资源文件存储目录，默认 data/plugin_data/astrbot_lice2d-adapter/live2d_resources",
-    },
-    "resource_base_url": {
-        "description": "资源基础 URL",
-        "type": "string",
-        "hint": "资源基础 URL，留空则自动生成",
-    },
-    "resource_token": {
-        "description": "资源访问令牌",
-        "type": "string",
-        "hint": "资源访问令牌，留空则复用 auth_token",
-    },
-    "resource_max_inline_bytes": {
-        "description": "内联资源最大字节",
-        "type": "int",
-        "hint": "内联资源最大字节数，默认 262144 (256KB)",
+        "hint": "资源文件存储目录（相对路径），默认 live2d_resources",
     },
     "resource_ttl_seconds": {
         "description": "资源 TTL(秒)",
         "type": "int",
         "hint": "资源生存时间(秒)，默认 604800 (7天)",
     },
-    "resource_max_total_bytes": {
-        "description": "最大总字节",
-        "type": "int",
-        "hint": "资源最大总字节数，默认 1073741824 (1GB)",
-    },
-    "resource_max_files": {
-        "description": "最大文件数",
-        "type": "int",
-        "hint": "资源最大文件数，默认 2000",
-    },
     "temp_dir": {
         "description": "临时文件目录",
         "type": "string",
-        "hint": "临时文件存储目录，默认 data/plugin_data/astrbot_lice2d-adapter/live2d_temp",
+        "hint": "临时文件存储目录（相对路径），默认 live2d_temp",
     },
     "temp_ttl_seconds": {
         "description": "临时文件 TTL(秒)",
         "type": "int",
         "hint": "临时文件生存时间(秒)，默认 21600 (6小时)",
-    },
-    "temp_max_total_bytes": {
-        "description": "临时文件最大总字节",
-        "type": "int",
-        "hint": "临时文件最大总字节数，默认 268435456 (256MB)",
-    },
-    "temp_max_files": {
-        "description": "临时文件最大数量",
-        "type": "int",
-        "hint": "临时文件最大数量，默认 5000",
-    },
-    "cleanup_interval_seconds": {
-        "description": "清理检查间隔(秒)",
-        "type": "int",
-        "hint": "资源清理检查间隔(秒)，默认 600 (10分钟)",
     },
 }
 
@@ -203,36 +143,21 @@ LIVE2D_I18N_RESOURCES = {
         "type": "live2d",
         "enable": False,
         "id": "live2d_default",
-        # WebSocket 服务器配置 | WebSocket Server Configuration
-        "ws_host": "127.0.0.1",  # WebSocket 服务监听地址(建议仅本机) | Listen address
-        "ws_port": 9090,  # WebSocket 服务端口 | Server port
-        "ws_path": "/astrbot/live2d",  # WebSocket 连接路径 | Connection path
-        "auth_token": "",  # 认证令牌(必填，留空将自动生成随机密钥) | Auth token
-        "max_connections": 1,  # 最大连接数 | Max connections
-        "kick_old": True,  # 断开旧连接 | Kick old connections
-        # 流式消息 | Streaming
-        "enable_streaming": True,  # 启用流式推送 | Enable streaming
-        "single_port_mode": True,  # 单端口复用模式 | Single port mode
-        "public_origin": "",  # 可选公网入口 | Optional public origin
-        # 资源服务器 | Resource Server
-        "resource_enabled": True,  # 启用资源服务 | Enable resource server
-        "resource_host": "127.0.0.1",  # 兼容旧配置，单端口模式下默认复用 ws_host | Legacy resource host
-        "resource_port": 9091,  # 兼容旧配置，单端口模式下默认复用 ws_port | Legacy resource port
-        "resource_path": "/resources",  # 资源访问路径 | Resource path
-        "resource_dir": "live2d_resources",  # 资源存储目录 | Resource directory
-        "resource_base_url": "",  # 资源基础URL(空=自动) | Base URL (empty=auto)
-        "resource_token": "",  # 资源访问令牌(空=复用auth_token) | Resource token
-        "resource_max_inline_bytes": 262144,  # 内联资源最大字节(256KB) | Max inline bytes
-        "resource_ttl_seconds": 604800,  # 资源TTL(7天) | Resource TTL (7 days)
-        "resource_max_total_bytes": 1073741824,  # 最大总字节(1GB) | Max total bytes
-        "resource_max_files": 2000,  # 最大文件数 | Max files
-        # 临时文件 | Temporary Files
-        "temp_dir": "live2d_temp",  # 临时文件目录 | Temp directory
-        "temp_ttl_seconds": 21600,  # 临时文件TTL(6小时) | Temp TTL (6 hours)
-        "temp_max_total_bytes": 268435456,  # 临时文件最大总字节(256MB) | Max temp bytes
-        "temp_max_files": 5000,  # 临时文件最大数量 | Max temp files
-        # 系统配置 | System Configuration
-        "cleanup_interval_seconds": 600,  # 清理检查间隔(10分钟) | Cleanup interval
+        # 连接配置
+        "ws_host": "127.0.0.1",
+        "ws_port": 9090,
+        "ws_path": "/astrbot/live2d",
+        "auth_token": "",
+        "max_connections": 1,
+        "kick_old": True,
+        "enable_streaming": True,
+        "public_origin": "",
+        # 资源管理
+        "resource_enabled": True,
+        "resource_dir": "live2d_resources",
+        "resource_ttl_seconds": 604800,
+        "temp_dir": "live2d_temp",
+        "temp_ttl_seconds": 21600,
     },
     adapter_display_name="Live2D",
     support_streaming_message=True,
@@ -476,8 +401,8 @@ class Live2DPlatformAdapter(Platform):
                 return self._data.get("kick_old", True)
 
             @property
-            def single_port_mode(self) -> bool:
-                return self._data.get("single_port_mode", True)
+            def enable_streaming(self) -> bool:
+                return self._data.get("enable_streaming", True)
 
             @property
             def public_origin(self) -> str:
@@ -490,59 +415,12 @@ class Live2DPlatformAdapter(Platform):
                 return self._data.get("resource_enabled", True)
 
             @property
-            def resource_host(self) -> str:
-                if self.single_port_mode:
-                    return self.server_host
-                return self._data.get("resource_host", self.server_host)
-
-            @property
-            def resource_port(self) -> int:
-                if self.single_port_mode:
-                    return self.server_port
-                return self._data.get("resource_port", 9091)
-
-            @property
-            def resource_path(self) -> str:
-                return self._data.get("resource_path", "/resources")
-
-            @property
             def resource_dir(self) -> str:
                 return self._resolve_managed_dir("resource_dir", "live2d_resources")
 
             @property
-            def resource_base_url(self) -> str:
-                base_url = str(self._data.get("resource_base_url", "") or "").strip()
-                if base_url:
-                    return base_url.rstrip("/")
-                if self.public_origin:
-                    return self.public_origin
-                host = self.resource_host
-                if host in {"0.0.0.0", "::"}:
-                    host = "127.0.0.1"
-                return f"http://{host}:{self.resource_port}"
-
-            @property
-            def resource_token(self) -> str:
-                if self.single_port_mode:
-                    return self.auth_token
-                token = self._data.get("resource_token", "")
-                return token if token else self.auth_token
-
-            @property
-            def resource_max_inline_bytes(self) -> int:
-                return self._data.get("resource_max_inline_bytes", 262144)
-
-            @property
             def resource_ttl_seconds(self) -> int:
                 return self._data.get("resource_ttl_seconds", 604800)
-
-            @property
-            def resource_max_total_bytes(self) -> int:
-                return self._data.get("resource_max_total_bytes", 1073741824)
-
-            @property
-            def resource_max_files(self) -> int:
-                return self._data.get("resource_max_files", 2000)
 
             @property
             def temp_dir(self) -> str:
@@ -552,21 +430,60 @@ class Live2DPlatformAdapter(Platform):
             def temp_ttl_seconds(self) -> int:
                 return self._data.get("temp_ttl_seconds", 21600)
 
+            # 固定值配置（内部使用）
+            @property
+            def single_port_mode(self) -> bool:
+                return True
+
+            @property
+            def resource_host(self) -> str:
+                return self.server_host
+
+            @property
+            def resource_port(self) -> int:
+                return self.server_port
+
+            @property
+            def resource_path(self) -> str:
+                return "/resources"
+
+            @property
+            def resource_base_url(self) -> str:
+                if self.public_origin:
+                    return self.public_origin
+                host = self.server_host
+                if host in {"0.0.0.0", "::"}:
+                    host = "127.0.0.1"
+                return f"http://{host}:{self.server_port}"
+
+            @property
+            def resource_token(self) -> str:
+                return self.auth_token
+
+            @property
+            def resource_max_inline_bytes(self) -> int:
+                return 524288  # 512KB
+
+            @property
+            def resource_max_total_bytes(self) -> int:
+                return 1073741824  # 1GB
+
+            @property
+            def resource_max_files(self) -> int:
+                return 2000
+
             @property
             def temp_max_total_bytes(self) -> int:
-                return self._data.get("temp_max_total_bytes", 268435456)
+                return 268435456  # 256MB
 
             @property
             def temp_max_files(self) -> int:
-                return self._data.get("temp_max_files", 5000)
-
-            @property
-            def enable_streaming(self) -> bool:
-                return self._data.get("enable_streaming", True)
+                return 5000
 
             @property
             def cleanup_interval_seconds(self) -> int:
-                return self._data.get("cleanup_interval_seconds", 600)
+                return 300  # 5分钟
+
 
         return ConfigAdapter(config_dict, plugin_data_dir)
 
