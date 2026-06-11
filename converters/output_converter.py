@@ -671,3 +671,45 @@ class OutputMessageConverter:
             return []
 
         return [create_text_element(content=text_chunk, duration=0, position="center")]
+
+
+def build_planner_context_v2(client_state: dict[str, Any]) -> dict[str, Any]:
+    """
+    构建 LLM 规划器上下文（v2.0 协议）
+
+    Args:
+        client_state: 客户端状态字典（包含 model_version, model, available_motions, available_expressions）
+
+    Returns:
+        LLM 规划器上下文字典
+    """
+    model_version = client_state.get("model_version", "1.0")
+    if model_version != "2.0":
+        return {}
+
+    model_info = client_state.get("model", {})
+    motions = model_info.get("motions", [])
+    expressions = model_info.get("expressions", [])
+
+    # 过滤出 action 类动作
+    action_motions = [m for m in motions if m.get("category") == "action"]
+
+    return {
+        "available_motions": [
+            {
+                "name": m["name"],
+                "description": m.get("description", ""),
+                "duration_ms": m.get("duration", 0)
+            }
+            for m in action_motions
+        ],
+        "available_expressions": [
+            {
+                "name": e["name"],
+                "description": e.get("description", "")
+            }
+            for e in expressions
+        ],
+        "capabilities": model_info.get("capabilities", {})
+    }
+

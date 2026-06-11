@@ -520,8 +520,39 @@ class MessageHandler:
     ) -> BasePacket | None:
         """处理模型信息更新"""
         payload = packet.payload or {}
-        self.client_states.setdefault(client_id, {})["model"] = payload
+        client_state = self.client_states.setdefault(client_id, {})
+        client_state["model"] = payload
 
+        # 解析协议版本
+        version = payload.get("version", "1.0")
+        client_state["model_version"] = version
+
+        # v2.0 协议处理
+        if version == "2.0":
+            motions = payload.get("motions", [])
+            expressions = payload.get("expressions", [])
+
+            # 提取可用的动作（仅 action 类）
+            available_motions = [
+                m["name"] for m in motions
+                if m.get("category") == "action"
+            ]
+            client_state["available_motions"] = available_motions
+
+            # 提取可用的表情
+            available_expressions = [e["name"] for e in expressions]
+            client_state["available_expressions"] = available_expressions
+
+            logger.info(
+                f"客户端 {client_id} 模型信息更新 (v2.0): "
+                f"name={payload.get('modelName', 'unknown')}, "
+                f"motions={len(motions)} (action={len(available_motions)}), "
+                f"expressions={len(expressions)}, "
+                f"idleMode={payload.get('capabilities', {}).get('idleMode', 'unknown')}"
+            )
+            return None
+
+        # v1.0 协议处理（保持原逻辑）
         model_name = payload.get("name", "unknown")
         motion_groups = payload.get("motionGroups", {})
         expressions = payload.get("expressions", [])

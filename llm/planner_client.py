@@ -14,6 +14,7 @@ except Exception:  # pragma: no cover
 from ..core.live2d_plan_schema import Live2DPerformPlan, parse_live2d_perform_plan
 from ..core.planner_runtime import get_plugin_context
 from ..core.expression_types import get_available_expression_types
+from .planner_prompts import format_planner_prompt_v2
 
 
 class PlannerLLMClient:
@@ -30,6 +31,26 @@ class PlannerLLMClient:
             "motionGroups": list((model_info.get("motionGroups") or {}).keys())[:32],
             "availableExpressionTypes": get_available_expression_types(model_info),
         }
+
+    @staticmethod
+    def _build_model_summary_v2(
+        client_model_info: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """构建 v2.0 协议的模型摘要"""
+        model_info = client_model_info or {}
+        version = model_info.get("version", "1.0")
+
+        if version == "2.0":
+            return {
+                "version": "2.0",
+                "name": model_info.get("modelName"),
+                "motions": model_info.get("motions", []),
+                "expressions": model_info.get("expressions", []),
+                "capabilities": model_info.get("capabilities", {})
+            }
+
+        # 回退到 v1.0 格式
+        return PlannerLLMClient._build_model_summary(client_model_info)
 
     @staticmethod
     def _extract_response_text(payload: dict[str, Any]) -> str:
@@ -113,9 +134,18 @@ class PlannerLLMClient:
                 )
             return None
 
+        # 检测协议版本
+        version = (client_model_info or {}).get("version", "1.0")
+        if version == "2.0":
+            # 使用 v2.0 格式化 prompt
+            model_summary = self._build_model_summary_v2(client_model_info)
+        else:
+            # 使用 v1.0 格式
+            model_summary = self._build_model_summary(client_model_info)
+
         request_payload = {
             "reply_text": reply_text,
-            "client_model": self._build_model_summary(client_model_info),
+            "client_model": model_summary,
         }
         timeout_seconds = float(planner_config.get("timeout_seconds", 20) or 20)
 

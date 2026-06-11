@@ -10,14 +10,23 @@ __all__ = [
     "ErrorInfo",
     "BasePacket",
     "Protocol",
+    "MotionCategory",
     "create_text_element",
     "create_tts_element",
     "create_image_element",
     "create_video_element",
     "create_motion_element",
+    "create_motion_element_v2",
     "create_expression_element",
+    "create_expression_element_v2",
     "create_wait_element",
 ]
+
+
+class MotionCategory:
+    """动作分类常量"""
+    IDLE = "idle"      # 待机动作（循环播放）
+    ACTION = "action"  # 普通动作（播放一次）
 
 
 @dataclass
@@ -261,6 +270,29 @@ class Protocol:
             Protocol.OP_STATE_CONFIG, payload=payload, packet_id=packet_id
         )
 
+    @staticmethod
+    def create_state_model_v2(
+        model_name: str,
+        motions: list[dict[str, Any]],
+        expressions: list[dict[str, Any]],
+        packet_id: str | None = None
+    ) -> BasePacket:
+        """创建模型状态事件 v2（面向 LLM 控制）"""
+        return Protocol.create_packet(
+            Protocol.OP_STATE_MODEL,
+            payload={
+                "version": "2.0",
+                "modelName": model_name,
+                "motions": motions,
+                "expressions": expressions,
+                "capabilities": {
+                    "idleMode": "noise+motion",
+                    "llmControlled": True
+                }
+            },
+            packet_id=packet_id
+        )
+
 
 # 表演元素构建辅助函数
 def create_text_element(
@@ -400,6 +432,38 @@ def create_expression_element(
     if motion_type:
         element["motionType"] = motion_type
     return element
+
+
+def create_motion_element_v2(
+    name: str,
+    priority: int = 2,
+    fade_in: int = 300,
+    fade_out: int = 300
+) -> dict[str, Any]:
+    """创建动作元素 v2（使用别名，播放一次）"""
+    return {
+        "type": "motion",
+        "name": name,
+        "priority": priority,
+        "fadeIn": fade_in,
+        "fadeOut": fade_out
+    }
+
+
+def create_expression_element_v2(
+    name: str,
+    hold_ms: int,
+    fade: int = 300,
+    reset_policy: str = "fadeOut"
+) -> dict[str, Any]:
+    """创建表情元素 v2（LLM 控制版，使用别名并强制指定持续时间）"""
+    return {
+        "type": "expression",
+        "name": name,
+        "holdMs": hold_ms,
+        "fade": fade,
+        "resetPolicy": reset_policy
+    }
 
 
 def create_wait_element(duration: int) -> dict[str, Any]:
