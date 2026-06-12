@@ -10,6 +10,7 @@ from astrbot.api import logger
 
 from ..core.config import ConfigLike
 from ..core.diagnostics import summarize_expression_type_assignments
+from ..core.model_protocol import normalize_expression_entries
 from ..core.protocol import (
     BasePacket,
     create_expression_element,
@@ -529,18 +530,20 @@ class MessageHandler:
 
         # v2.0 协议处理
         if version == "2.0":
-            motions = payload.get("motions", [])
-            expressions = payload.get("expressions", [])
+            raw_motions = payload.get("motions", [])
+            motions = [m for m in raw_motions if isinstance(m, dict)] if isinstance(raw_motions, list) else []
+            expressions = normalize_expression_entries(payload)
 
             # 提取可用的动作（仅 action 类）
             available_motions = [
-                m["name"] for m in motions
-                if m.get("category") == "action"
+                str(m.get("name") or m.get("id") or "").strip()
+                for m in motions
+                if m.get("category") == "action" and str(m.get("name") or m.get("id") or "").strip()
             ]
             client_state["available_motions"] = available_motions
 
             # 提取可用的表情
-            available_expressions = [e["name"] for e in expressions]
+            available_expressions = [e["name"] for e in expressions if e.get("name")]
             client_state["available_expressions"] = available_expressions
 
             logger.info(

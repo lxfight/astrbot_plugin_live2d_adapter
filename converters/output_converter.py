@@ -25,11 +25,20 @@ from astrbot.api.message_components import (
 
 from ..core.protocol import (
     create_expression_element,
+    create_expression_element_v2,
     create_image_element,
     create_motion_element,
+    create_motion_element_v2,
     create_text_element,
     create_tts_element,
     create_video_element,
+)
+from ..core.model_protocol import (
+    build_legacy_motion_groups_from_v2,
+    is_v2_model_info,
+    normalize_expression_entries,
+    resolve_v2_expression_by_name,
+    resolve_v2_motion_by_name,
 )
 
 
@@ -182,6 +191,22 @@ class OutputMessageConverter:
             - fade_out: int - 淡出时间ms（默认 300）
             - motion_type: str - 动作类型（可选，如 happy, sad）
         """
+        name = getattr(component, "name", None) or getattr(component, "motion_name", None)
+        if name and is_v2_model_info(self.client_model_info):
+            motion = resolve_v2_motion_by_name(self.client_model_info, str(name))
+            if not motion:
+                return None
+            motion_elem = create_motion_element_v2(
+                name=str(motion.get("name") or name),
+                priority=getattr(component, "priority", 2),
+                fade_in=getattr(component, "fade_in", 300),
+                fade_out=getattr(component, "fade_out", 300),
+            )
+            motion_type = getattr(component, "motion_type", None)
+            if motion_type:
+                motion_elem["motionType"] = motion_type
+            return motion_elem
+
         group = getattr(component, "group", None)
         if not group:
             return None
@@ -227,6 +252,8 @@ class OutputMessageConverter:
             return normalized_group
 
         motion_groups = self.client_model_info.get("motionGroups", {})
+        if is_v2_model_info(self.client_model_info) and not motion_groups:
+            motion_groups = build_legacy_motion_groups_from_v2(self.client_model_info)
         if not isinstance(motion_groups, dict) or not motion_groups:
             return normalized_group
 
@@ -247,6 +274,8 @@ class OutputMessageConverter:
             return True  # 没有模型信息时不验证
 
         motion_groups = self.client_model_info.get("motionGroups", {})
+        if is_v2_model_info(self.client_model_info) and not motion_groups:
+            motion_groups = build_legacy_motion_groups_from_v2(self.client_model_info)
         if not motion_groups:
             return True  # 模型信息中没有动作组列表时不验证
 
@@ -267,6 +296,8 @@ class OutputMessageConverter:
             return True  # 没有模型信息时不验证
 
         motion_groups = self.client_model_info.get("motionGroups", {})
+        if is_v2_model_info(self.client_model_info) and not motion_groups:
+            motion_groups = build_legacy_motion_groups_from_v2(self.client_model_info)
         if not motion_groups:
             return True
 
@@ -284,13 +315,15 @@ class OutputMessageConverter:
         if expression_id is None or isinstance(expression_id, bool):
             return None
 
-        expressions = self.client_model_info.get("expressions", [])
+        expressions = normalize_expression_entries(self.client_model_info)
         if isinstance(expression_id, int):
-            if (
-                isinstance(expressions, list)
-                and 0 <= expression_id < len(expressions)
-            ):
-                candidate = str(expressions[expression_id] or "").strip()
+            if 0 <= expression_id < len(expressions):
+                key = "name" if is_v2_model_info(self.client_model_info) else "id"
+                candidate = str(
+                    expressions[expression_id].get(key)
+                    or expressions[expression_id].get("id")
+                    or ""
+                ).strip()
                 return candidate or None
             if not self.client_model_info and allow_index:
                 return expression_id
@@ -321,19 +354,24 @@ class OutputMessageConverter:
         if not expressions:
             return expression_str
 
-        if expression_str in expressions:
-            return expression_str
-
         expression_lower = expression_str.lower()
         for available_expr in expressions:
-            candidate = str(available_expr or "").strip()
-            if candidate.lower() == expression_lower:
-                return candidate
+            candidates = [
+                str(available_expr.get("id") or "").strip(),
+                str(available_expr.get("name") or "").strip(),
+            ]
+            for candidate in candidates:
+                if candidate and candidate.lower() == expression_lower:
+                    key = "name" if is_v2_model_info(self.client_model_info) else "id"
+                    return str(available_expr.get(key) or candidate).strip()
 
         if expression_lower.isdigit():
             index = int(expression_lower)
             if 0 <= index < len(expressions):
-                candidate = str(expressions[index] or "").strip()
+                key = "name" if is_v2_model_info(self.client_model_info) else "id"
+                candidate = str(
+                    expressions[index].get(key) or expressions[index].get("id") or ""
+                ).strip()
                 return candidate or None
 
         return None
@@ -405,6 +443,7 @@ class OutputMessageConverter:
             "MotionShim",
             (),
             {
+                "name": getattr(component, "motion_name", None),
                 "group": getattr(component, "group", None)
                 or getattr(component, "motion_group", None),
                 "index": getattr(component, "index", 0),
@@ -436,10 +475,36 @@ class OutputMessageConverter:
         expression_id = getattr(component, "expression_id", None) or getattr(
             component, "id", None
         )
+        expression_name = getattr(component, "expression_name", None)
+        if expression_name is None and is_v2_model_info(self.client_model_info):
+            expression_name = getattr(component, "name", None)
         combo = self._normalize_expression_combo(getattr(component, "combo", None))
         semantic = self._normalize_expression_semantic(
             getattr(component, "semantic", None)
         )
+
+        if (
+            expression_name
+            and is_v2_model_info(self.client_model_info)
+            and not combo
+            and not semantic
+        ):
+            expression = resolve_v2_expression_by_name(
+                self.client_model_info,
+                str(expression_name),
+            )
+            if not expression:
+                return None
+            expression_elem = create_expression_element_v2(
+                name=expression["name"],
+                hold_ms=getattr(component, "hold_ms", 0) or 0,
+                fade=getattr(component, "fade", 300),
+                reset_policy=getattr(component, "reset_policy", "previous") or "previous",
+            )
+            motion_type = getattr(component, "motion_type", None)
+            if motion_type:
+                expression_elem["motionType"] = motion_type
+            return expression_elem
 
         if expression_id is None and not combo and not semantic:
             return None
@@ -712,4 +777,3 @@ def build_planner_context_v2(client_state: dict[str, Any]) -> dict[str, Any]:
         ],
         "capabilities": model_info.get("capabilities", {})
     }
-

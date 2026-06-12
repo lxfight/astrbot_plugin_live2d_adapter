@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .expression_types import get_available_expression_type_assignments
+from .model_protocol import normalize_expression_entries
 
 
 def preview_text(value: Any, limit: int = 120) -> str:
@@ -34,7 +35,7 @@ def summarize_client_model_info(client_model_info: dict[str, Any] | None) -> dic
     if not isinstance(client_model_info, dict):
         return {}
 
-    expressions = client_model_info.get("expressions")
+    expressions = normalize_expression_entries(client_model_info)
     catalog = client_model_info.get("expressionCatalog")
     presets = client_model_info.get("semanticPresets")
     motion_groups = client_model_info.get("motionGroups")
@@ -45,7 +46,7 @@ def summarize_client_model_info(client_model_info: dict[str, Any] | None) -> dic
 
     return {
         "capabilities": capabilities if isinstance(capabilities, dict) else {},
-        "expressions": len(expressions) if isinstance(expressions, list) else 0,
+        "expressions": len(expressions),
         "expressionCatalog": len(catalog) if isinstance(catalog, list) else 0,
         "semanticPresets": len(presets) if isinstance(presets, dict) else 0,
         "availableExpressionTypes": list(available_type_assignments.keys()),
@@ -72,11 +73,13 @@ def summarize_perform_sequence(sequence: list[dict[str, Any]] | None) -> list[di
         element_type = str(element.get("type") or "")
         item: dict[str, Any] = {"type": element_type}
         if element_type == "motion":
+            item["name"] = element.get("name")
             item["group"] = element.get("group")
             item["index"] = element.get("index")
             item["priority"] = element.get("priority")
             item["motionType"] = element.get("motionType")
         elif element_type == "expression":
+            item["name"] = element.get("name")
             item["id"] = element.get("id")
             if isinstance(element.get("combo"), list):
                 item["combo"] = [

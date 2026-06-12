@@ -11,7 +11,18 @@ from ..core.expression_types import (
     normalize_expression_type,
 )
 from ..core.live2d_plan_schema import Live2DPerformPlan
-from ..core.protocol import create_expression_element, create_motion_element
+from ..core.model_protocol import (
+    build_legacy_motion_groups_from_v2,
+    is_v2_model_info,
+    iter_v2_motions,
+    normalize_expression_entries,
+)
+from ..core.protocol import (
+    create_expression_element,
+    create_expression_element_v2,
+    create_motion_element,
+    create_motion_element_v2,
+)
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+|[\u4e00-\u9fff]+", re.IGNORECASE)
 
@@ -50,21 +61,23 @@ class Live2DPlanResolver:
 
     def _get_motion_groups(self) -> dict[str, list[dict[str, Any]]]:
         motion_groups = self.client_model_info.get("motionGroups")
-        return motion_groups if isinstance(motion_groups, dict) else {}
+        if isinstance(motion_groups, dict):
+            return motion_groups
+        if is_v2_model_info(self.client_model_info):
+            return build_legacy_motion_groups_from_v2(self.client_model_info)
+        return {}
 
     def _get_expression_catalog(self) -> list[dict[str, Any]]:
         catalog = self.client_model_info.get("expressionCatalog")
         return catalog if isinstance(catalog, list) else []
 
     def _get_expressions(self) -> list[str]:
-        expressions = self.client_model_info.get("expressions")
-        if not isinstance(expressions, list):
-            return []
-
         normalized: list[str] = []
         seen: set[str] = set()
-        for item in expressions:
-            expression_id = str(item or "").strip()
+        for item in normalize_expression_entries(self.client_model_info):
+            expression_id = str(
+                item.get("name") if is_v2_model_info(self.client_model_info) else item.get("id")
+            ).strip()
             key = expression_id.lower()
             if expression_id and key not in seen:
                 seen.add(key)
@@ -243,6 +256,9 @@ class Live2DPlanResolver:
         }
 
     def _resolve_motion(self, plan: Live2DPerformPlan) -> dict[str, Any] | None:
+        if is_v2_model_info(self.client_model_info):
+            return self._resolve_motion_v2(plan)
+
         motion_groups = self._get_motion_groups()
         if not motion_groups:
             return None
@@ -288,6 +304,57 @@ class Live2DPlanResolver:
             motion["motionType"] = motion_intent
         return motion
 
+    def _resolve_motion_v2(self, plan: Live2DPerformPlan) -> dict[str, Any] | None:
+        motions = [
+            motion
+            for motion in iter_v2_motions(self.client_model_info)
+            if motion.get("category") == "action"
+        ]
+        if not motions:
+            return None
+
+        tags = self._collect_tags(plan)
+        intents = [item for item in [plan.motion_intent, *tags] if item]
+        best_motion = None
+        best_score = 0
+
+        for motion in motions:
+            candidates = [
+                str(motion.get("name") or "").strip().lower(),
+                str(motion.get("id") or "").strip().lower(),
+                str(motion.get("description") or "").strip().lower(),
+            ]
+            score = 0
+            for intent in intents:
+                intent_lower = str(intent).strip().lower()
+                if not intent_lower:
+                    continue
+                for candidate in candidates:
+                    if not candidate:
+                        continue
+                    if candidate == intent_lower:
+                        score = max(score, 5)
+                    elif intent_lower in candidate:
+                        score = max(score, 4)
+                    elif any(alias in candidate for alias in TAG_ALIASES.get(intent_lower, set())):
+                        score = max(score, 3)
+            if score > best_score:
+                best_motion = motion
+                best_score = score
+
+        if not best_motion:
+            return None
+
+        motion_name = str(best_motion.get("name") or "").strip()
+        if not motion_name:
+            return None
+
+        motion = create_motion_element_v2(name=motion_name, priority=2)
+        motion_intent = self._normalize_tag(plan.motion_intent)
+        if motion_intent:
+            motion["motionType"] = motion_intent
+        return motion
+
     def _resolve_expression(self, plan: Live2DPerformPlan, reset_policy: str) -> dict[str, Any] | None:
         intensity = max(0.25, min(plan.intensity or 0.7, 1.0))
         motion_intent = self._normalize_tag(plan.motion_intent)
@@ -322,6 +389,12 @@ class Live2DPlanResolver:
             )
 
         if expression_ids:
+            if is_v2_model_info(self.client_model_info):
+                return create_expression_element_v2(
+                    name=expression_ids[0],
+                    hold_ms=plan.hold_ms,
+                    reset_policy=reset_policy,
+                )
             return create_expression_element(
                 expression_id=expression_ids[0],
                 hold_ms=plan.hold_ms,

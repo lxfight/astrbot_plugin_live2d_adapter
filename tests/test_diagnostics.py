@@ -65,9 +65,16 @@ class DiagnosticsTest(unittest.TestCase):
     def test_summarize_perform_sequence_expands_expression_and_motion(self) -> None:
         summary = summarize_perform_sequence(
             [
-                {"type": "motion", "group": "Happy", "index": 0, "priority": 2},
+                {
+                    "type": "motion",
+                    "name": "开心动作",
+                    "group": "Happy",
+                    "index": 0,
+                    "priority": 2,
+                },
                 {
                     "type": "expression",
+                    "name": "微笑",
                     "combo": [{"id": "Smile", "weight": 0.8}],
                     "holdMs": 1200,
                     "resetPolicy": "previous",
@@ -79,9 +86,16 @@ class DiagnosticsTest(unittest.TestCase):
         self.assertEqual(
             summary,
             [
-                {"type": "motion", "group": "Happy", "index": 0, "priority": 2},
+                {
+                    "type": "motion",
+                    "name": "开心动作",
+                    "group": "Happy",
+                    "index": 0,
+                    "priority": 2,
+                },
                 {
                     "type": "expression",
+                    "name": "微笑",
                     "combo": [{"id": "Smile", "weight": 0.8}],
                     "holdMs": 1200,
                     "resetPolicy": "previous",

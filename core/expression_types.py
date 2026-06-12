@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .model_protocol import normalize_expression_entries
+
 LIVE2D_EXPRESSION_TYPES = (
     "neutral",
     "happy",
@@ -230,7 +232,10 @@ def _normalize_expression_ids(value: Any) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
     for item in value:
-        expression_id = str(item or "").strip()
+        if isinstance(item, dict):
+            expression_id = str(item.get("id") or item.get("name") or "").strip()
+        else:
+            expression_id = str(item or "").strip()
         key = expression_id.lower()
         if expression_id and key not in seen:
             seen.add(key)
@@ -273,4 +278,15 @@ def get_available_expression_type_assignments(
 def get_available_expression_types(
     client_model_info: dict[str, Any] | None,
 ) -> list[str]:
-    return list(get_available_expression_type_assignments(client_model_info).keys())
+    expression_types = list(get_available_expression_type_assignments(client_model_info).keys())
+    if expression_types or not isinstance(client_model_info, dict):
+        return expression_types
+
+    # v2-only model payloads may not include semanticPresets; use expression names as hints.
+    inferred: list[str] = []
+    for expression in normalize_expression_entries(client_model_info):
+        for candidate in (expression.get("name"), expression.get("id")):
+            normalized = normalize_expression_type(candidate)
+            if normalized and normalized not in inferred:
+                inferred.append(normalized)
+    return inferred

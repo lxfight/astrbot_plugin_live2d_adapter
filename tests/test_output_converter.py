@@ -146,6 +146,54 @@ class OutputMessageConverterTest(unittest.TestCase):
             },
         )
 
+    def test_v2_perform_plan_component_uses_alias_names(self) -> None:
+        converter = OutputMessageConverter(
+            client_model_info={
+                "version": "2.0",
+                "modelName": "Haru",
+                "motions": [
+                    {
+                        "id": "HappyLoop_00",
+                        "name": "开心动作",
+                        "category": "action",
+                        "duration": 2400,
+                    }
+                ],
+                "expressions": [{"id": "Smile", "name": "微笑"}],
+            }
+        )
+        component = types.SimpleNamespace(
+            motion_name="开心动作",
+            expression_name="微笑",
+            hold_ms=1600,
+            reset_policy="previous",
+            motion_type="happy",
+        )
+
+        sequence = converter._build_perform_plan_from_component(component)
+
+        self.assertEqual(
+            sequence,
+            [
+                {
+                    "type": "motion",
+                    "name": "开心动作",
+                    "priority": 2,
+                    "fadeIn": 300,
+                    "fadeOut": 300,
+                    "motionType": "happy",
+                },
+                {
+                    "type": "expression",
+                    "name": "微笑",
+                    "holdMs": 1600,
+                    "fade": 300,
+                    "resetPolicy": "previous",
+                    "motionType": "happy",
+                },
+            ],
+        )
+
     def test_extract_text_summary_uses_tts_record_text(self) -> None:
         from astrbot.api.event import MessageChain
         from astrbot.api.message_components import Image, Plain, Record

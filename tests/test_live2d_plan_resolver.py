@@ -385,6 +385,63 @@ class Live2DPlanResolverTest(unittest.TestCase):
             ],
         )
 
+    def test_resolve_v2_model_uses_alias_names(self) -> None:
+        resolver = Live2DPlanResolver(
+            {
+                "version": "2.0",
+                "modelName": "Haru",
+                "motions": [
+                    {"id": "Idle_00", "name": "待机", "category": "idle", "duration": 3000},
+                    {
+                        "id": "HappyLoop_00",
+                        "name": "开心动作",
+                        "category": "action",
+                        "duration": 2400,
+                    },
+                ],
+                "expressions": [
+                    {"id": "Smile", "name": "微笑"},
+                    {"id": "Sad", "name": "难过"},
+                ],
+                "capabilities": {
+                    "idleMode": "noise+motion",
+                    "llmControlled": True,
+                },
+            }
+        )
+
+        plan = Live2DPerformPlan(
+            motion_intent="happy",
+            expression_intent="happy",
+            emotion_tags=["开心"],
+            intensity=0.8,
+            hold_ms=1800,
+            confidence=0.9,
+        )
+
+        sequence = resolver.resolve(plan, reset_policy="previous")
+
+        self.assertEqual(
+            sequence,
+            [
+                {
+                    "type": "motion",
+                    "name": "开心动作",
+                    "priority": 2,
+                    "fadeIn": 300,
+                    "fadeOut": 300,
+                    "motionType": "happy",
+                },
+                {
+                    "type": "expression",
+                    "name": "微笑",
+                    "holdMs": 1800,
+                    "fade": 300,
+                    "resetPolicy": "previous",
+                },
+            ],
+        )
+
 
 
 if __name__ == "__main__":

@@ -51,6 +51,37 @@ class MessageHandlerTest(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_handle_state_model_v2_records_alias_capabilities(self) -> None:
+        handler = MessageHandler(SimpleNamespace())
+        payload = {
+            "version": "2.0",
+            "modelName": "Haru",
+            "motions": [
+                {"id": "Idle_00", "name": "待机", "category": "idle", "duration": 3000},
+                {
+                    "id": "HappyLoop_00",
+                    "name": "开心动作",
+                    "category": "action",
+                    "duration": 2400,
+                },
+            ],
+            "expressions": [{"id": "Smile", "name": "微笑"}],
+            "capabilities": {
+                "idleMode": "noise+motion",
+                "llmControlled": True,
+            },
+        }
+        packet = Protocol.create_packet(Protocol.OP_STATE_MODEL, payload=payload)
+
+        result = await handler.handle_state_model(packet, "client-2")
+
+        self.assertIsNone(result)
+        state = handler.client_states["client-2"]
+        self.assertEqual(state["model"], payload)
+        self.assertEqual(state["model_version"], "2.0")
+        self.assertEqual(state["available_motions"], ["开心动作"])
+        self.assertEqual(state["available_expressions"], ["微笑"])
+
 
 if __name__ == "__main__":
     unittest.main()
